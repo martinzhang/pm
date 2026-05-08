@@ -1202,7 +1202,7 @@ function openUserPicker(anchor, onPick, opts){
     var pop = document.createElement('div');
     pop.id = 'user-picker-pop';
     pop.className = 'user-picker';
-    pop.style.cssText = 'position:fixed;z-index:9998;min-width:240px;max-width:320px;' +
+    pop.style.cssText = 'position:fixed;z-index:9998;min-width:240px;max-width:280px;' +
         'background:rgba(255,255,255,0.82);backdrop-filter:saturate(180%) blur(28px);-webkit-backdrop-filter:saturate(180%) blur(28px);' +
         'border:1px solid rgba(0,0,0,0.08);border-radius:14px;box-shadow:0 12px 40px rgba(0,0,0,0.18);' +
         'padding:8px;opacity:0;transform:translateY(-6px) scale(0.98);transition:opacity .18s,transform .22s cubic-bezier(0.34,1.56,0.64,1)';
@@ -2337,8 +2337,37 @@ function renderMeetingDetail(m) {
         if (hasPending) {
             html += '<button class="btn btn-primary btn-block" onclick="confirmAllChanges(' + m.id + ')" style="margin-bottom:12px">全部确认并执行</button>';
         }
+        // Group subtasks under their inferred parent create_task.
+        // Rule: a create_subtask with task_id=null is treated as a child of the
+        // most recent preceding create_task. Subtasks with a valid task_id stay flat.
+        var groups = [];
+        var lastCreateTaskGroup = null;
         m.changes.forEach(function(c) {
-            html += renderChangeCard(m.id, c);
+            var nv = {};
+            try { nv = c.new_value ? (typeof c.new_value === 'string' ? JSON.parse(c.new_value) : c.new_value) : {}; } catch(e){}
+            if (c.change_type === 'create_task') {
+                var g = { parent: c, parentNV: nv, children: [] };
+                groups.push(g);
+                lastCreateTaskGroup = g;
+            } else if (c.change_type === 'create_subtask' && (!nv || !nv.task_id) && lastCreateTaskGroup) {
+                lastCreateTaskGroup.children.push(c);
+            } else {
+                groups.push({ parent: c, parentNV: nv, children: [] });
+                if (c.change_type !== 'create_task') lastCreateTaskGroup = null;
+            }
+        });
+        groups.forEach(function(g) {
+            if (g.children.length) {
+                html += '<div class="change-group">';
+                html += renderChangeCard(m.id, g.parent, { isParent: true, childCount: g.children.length });
+                html += '<div class="change-children">';
+                g.children.forEach(function(child) {
+                    html += renderChangeCard(m.id, child, { isChild: true, parentName: g.parentNV.name || '' });
+                });
+                html += '</div></div>';
+            } else {
+                html += renderChangeCard(m.id, g.parent);
+            }
         });
     }
 
@@ -2346,7 +2375,8 @@ function renderMeetingDetail(m) {
     document.getElementById('meeting-changes-container').innerHTML = html;
 }
 
-function renderChangeCard(mid, c) {
+function renderChangeCard(mid, c, opts) {
+    opts = opts || {};
     var typeMap = {
         create_project: '新建项目', modify_project: '修改项目',
         create_task: '新建任务', modify_task: '修改任务', complete_task: '完成任务',
@@ -2355,10 +2385,16 @@ function renderChangeCard(mid, c) {
     var statusMap = { pending: '待确认', confirmed: '已确认', skipped: '已跳过' };
     var statusClass = c.status === 'confirmed' ? 'badge-green' : c.status === 'skipped' ? 'badge-gray' : 'badge-orange';
 
-    var html = '<div class="card change-card" id="change-' + c.id + '">' +
+    var extraClass = '';
+    if (opts.isParent) extraClass = ' change-card-parent';
+    if (opts.isChild) extraClass = ' change-card-child';
+
+    var html = '<div class="card change-card' + extraClass + '" id="change-' + c.id + '">' +
         '<div class="card-row">' +
         '<span class="badge badge-blue">' + (typeMap[c.change_type] || c.change_type) + '</span>' +
         '<span class="badge ' + statusClass + '">' + (statusMap[c.status] || c.status) + '</span>' +
+        (opts.isParent && opts.childCount ? '<span class="badge badge-gray" style="margin-left:auto">含 ' + opts.childCount + ' 个子任务</span>' : '') +
+        (opts.isChild ? '<span class="badge badge-gray" title="父任务：' + esc(opts.parentName || '') + '">↳ 子任务</span>' : '') +
         '</div>' +
         '<div class="change-desc">' + esc(c.description) + '</div>';
 

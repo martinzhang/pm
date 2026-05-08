@@ -143,6 +143,7 @@ def init_db():
             status TEXT DEFAULT 'pending',
             confirmed_by TEXT,
             confirmed_at TEXT,
+            result_id INTEGER,
             FOREIGN KEY (meeting_id) REFERENCES meeting_minutes(id)
         );
     """)
@@ -179,6 +180,17 @@ def run_migrations():
         cols = [r[1] for r in c.execute("PRAGMA table_info(tasks)").fetchall()]
         if "collaborator_ids" not in cols:
             c.execute("ALTER TABLE tasks ADD COLUMN collaborator_ids TEXT DEFAULT ''")
+            c.commit()
+        c.close()
+    except Exception:
+        pass
+
+    # Migrate: add result_id column to meeting_changes (records DB id created by a confirmed change)
+    try:
+        c = get_db()
+        cols = [r[1] for r in c.execute("PRAGMA table_info(meeting_changes)").fetchall()]
+        if "result_id" not in cols:
+            c.execute("ALTER TABLE meeting_changes ADD COLUMN result_id INTEGER")
             c.commit()
         c.close()
     except Exception:
