@@ -315,6 +315,29 @@ def get_meeting(mid):
     return jsonify(meeting)
 
 
+@bp.route("/api/meetings/<int:mid>", methods=["DELETE"])
+def delete_meeting(mid):
+    """删除会议纪要本身及其所有变更建议（包含已确认/已拒绝），但**不会回滚**已生效到任务/项目的真实业务数据。
+
+    权限：仅会议导入者本人或 admin。
+    """
+    conn = get_db()
+    row = conn.execute("SELECT * FROM meeting_minutes WHERE id=?", (mid,)).fetchone()
+    if not row:
+        conn.close()
+        return jsonify({"error": "会议不存在"}), 404
+    meeting = dict(row)
+    if not (_is_admin() or meeting.get("imported_by") == g.user["id"]):
+        conn.close()
+        return jsonify({"error": "无权删除：仅会议导入者本人或管理员可删"}), 403
+
+    conn.execute("DELETE FROM meeting_changes WHERE meeting_id=?", (mid,))
+    conn.execute("DELETE FROM meeting_minutes WHERE id=?", (mid,))
+    conn.commit()
+    conn.close()
+    return jsonify({"ok": True, "message": "会议纪要已删除（已生效的任务/项目变更不受影响）"})
+
+
 @bp.route("/api/meetings/<int:mid>/analyze", methods=["POST"])
 def analyze_meeting(mid):
     t_start = time.monotonic()

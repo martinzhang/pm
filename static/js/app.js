@@ -2320,7 +2320,15 @@ function viewMeeting(id) {
 
 function renderMeetingDetail(m) {
     var html = '<div class="meeting-detail">';
-    html += '<div class="card"><div class="card-meta">' + (m.meeting_date || '') + ' · ' + esc(m.imported_by_name || '') + '</div>';
+    html += '<div class="card" style="position:relative">'
+        + '<button class="meeting-more-btn" onclick="toggleMeetingMenu(event,' + m.id + ')" title="更多操作" aria-label="更多操作">'
+        + '<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>'
+        + '</button>'
+        + '<div class="meeting-more-menu" id="meeting-more-menu-' + m.id + '" style="display:none">'
+        + '<button class="meeting-more-item" onclick="analyzeMeeting(' + m.id + ');closeMeetingMenu(' + m.id + ')">重新 AI 分析</button>'
+        + '<button class="meeting-more-item danger" onclick="deleteMeeting(' + m.id + ',\'' + esc(m.title).replace(/'/g, "\\'") + '\')">删除会议</button>'
+        + '</div>';
+    html += '<div class="card-meta">' + (m.meeting_date || '') + ' · ' + esc(m.imported_by_name || '') + '</div>';
     html += '<div class="meeting-content">' + esc(m.content).replace(/\n/g, '<br>') + '</div></div>';
 
     // Analysis button
@@ -2454,6 +2462,44 @@ function analyzeMeeting(id) {
         toast('分析完成，生成 ' + data.count + ' 条变更建议');
         viewMeeting(id);
     });
+}
+
+function toggleMeetingMenu(ev, id) {
+    if (ev) { ev.stopPropagation(); ev.preventDefault(); }
+    var menu = document.getElementById('meeting-more-menu-' + id);
+    if (!menu) return;
+    var open = menu.style.display !== 'none';
+    // 关掉所有同类菜单
+    document.querySelectorAll('.meeting-more-menu').forEach(function(m){ m.style.display = 'none'; });
+    if (!open) {
+        menu.style.display = 'block';
+        var hide = function(e) {
+            if (menu.contains(e.target)) return;
+            menu.style.display = 'none';
+            document.removeEventListener('click', hide, true);
+        };
+        setTimeout(function(){ document.addEventListener('click', hide, true); }, 0);
+    }
+}
+
+function closeMeetingMenu(id) {
+    var menu = document.getElementById('meeting-more-menu-' + id);
+    if (menu) menu.style.display = 'none';
+}
+
+function deleteMeeting(id, title) {
+    closeMeetingMenu(id);
+    var msg = '确认删除会议「' + title + '」？\n\n• 会议纪要本体及其全部变更建议都会被删除\n• 已确认并执行到任务/项目的真实数据【不会被回滚】\n\n此操作不可恢复。';
+    if (!confirm(msg)) return;
+    fetch(B + '/api/meetings/' + id, { method: 'DELETE', credentials: 'same-origin' })
+        .then(function(r){ return r.json().then(function(j){ return { ok: r.ok, data: j }; }); })
+        .then(function(res){
+            if (!res.ok) { toast((res.data && res.data.error) || '删除失败', true); return; }
+            toast(res.data.message || '已删除');
+            goBack();
+            loadMeetings();
+        })
+        .catch(function(){ toast('网络错误', true); });
 }
 
 function confirmChange(mid, cid) {

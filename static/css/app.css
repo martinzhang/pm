@@ -591,6 +591,13 @@ select.form-input{-webkit-appearance:none;appearance:none;background-image:url("
 
 /* ── Meeting ── */
 .meeting-content{font-size:13px;line-height:1.8;color:var(--text2);margin-top:8px;white-space:pre-wrap;word-break:break-word;max-height:320px;overflow-y:auto;padding-right:6px}
+.meeting-more-btn{position:absolute;top:8px;right:8px;width:30px;height:30px;border:none;background:transparent;color:var(--text3);border-radius:50%;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0}
+.meeting-more-btn:hover{background:rgba(0,0,0,0.05);color:var(--text)}
+.meeting-more-menu{position:absolute;top:42px;right:8px;min-width:160px;background:#fff;border:1px solid var(--border,#e5e7eb);border-radius:8px;box-shadow:0 6px 20px rgba(0,0,0,0.12);z-index:50;overflow:hidden}
+.meeting-more-item{display:block;width:100%;text-align:left;padding:10px 14px;border:none;background:transparent;font-size:14px;color:var(--text);cursor:pointer}
+.meeting-more-item:hover{background:rgba(0,0,0,0.04)}
+.meeting-more-item.danger{color:#c0504d}
+.meeting-more-item.danger:hover{background:rgba(192,80,77,0.08)}
 .change-card{margin-bottom:10px}
 .change-group{margin-bottom:14px;border-left:3px solid var(--accent,#3b82f6);border-radius:6px;padding-left:0}
 .change-group .change-card-parent{margin-bottom:0;border-bottom-left-radius:0;border-bottom-right-radius:0;border-bottom:1px dashed var(--border,#e5e7eb)}
