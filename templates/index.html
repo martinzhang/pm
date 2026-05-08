@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<link rel="icon" type="image/png" href="/images/favicon.png">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<title>奈娃咖啡项目管理</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
+</head>
+<body>
+
+<!-- Navbar -->
+<div id="navbar" class="navbar glass">
+    <div class="nav-inner">
+        <button id="nav-back" class="nav-back" onclick="goBack()" style="display:none">&lt; 返回</button>
+        <span id="nav-title" class="nav-title"><span class="cursor-blink">&gt;_</span>奈娃咖啡项目管理</span>
+        <div class="nav-actions">
+            <button class="nav-icon-btn" onclick="exportDoc()" title="导出文档" style="position:relative">
+                <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8l-6-6zm-1 2l5 5h-5V4zM6 20V4h6v6h6v10H6z"/><path d="M8 16h8v1H8zm0-3h8v1H8z"/></svg>
+            </button>
+            <button class="nav-icon-btn" onclick="toggleAlerts()" style="position:relative" id="alert-bell-btn">
+                <svg viewBox="0 0 24 24"><path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2zm6-6v-5c0-3.07-1.63-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.64 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"/></svg>
+                <span id="alert-dot" class="alert-dot" style="display:none"></span>
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- PAGES -->
+
+<!-- Dashboard -->
+<div id="page-dashboard" class="page active">
+    <div class="container">
+        <div class="dash-stats" id="dash-stats"></div>
+        <div class="section-title">我的待办</div>
+        <div id="dash-tasks"></div>
+    </div>
+</div>
+
+<!-- Projects List -->
+<div id="page-projects" class="page">
+    <div class="container">
+        <div class="chip-bar" id="project-filter"></div>
+        <div id="projects-list"></div>
+    </div>
+    <button class="fab" onclick="openProjectForm()" aria-label="添加"><svg width="22" height="22" viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><line x1="11" y1="4" x2="11" y2="18"/><line x1="4" y1="11" x2="18" y2="11"/></svg></button>
+</div>
+
+<!-- Project Detail (Gantt + Tasks) -->
+<div id="page-project" class="page">
+    <div class="container" id="project-detail"></div>
+    <button class="fab" onclick="openTaskForm()" id="fab-add-task" aria-label="添加"><svg width="22" height="22" viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><line x1="11" y1="4" x2="11" y2="18"/><line x1="4" y1="11" x2="18" y2="11"/></svg></button>
+</div>
+
+<!-- Calendar -->
+<div id="page-calendar" class="page">
+    <div class="container" id="calendar-container"></div>
+    <button class="fab" onclick="openCalEventForm()" aria-label="添加"><svg width="22" height="22" viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><line x1="11" y1="4" x2="11" y2="18"/><line x1="4" y1="11" x2="18" y2="11"/></svg></button>
+</div>
+
+<!-- Meetings List -->
+<div id="page-meetings" class="page">
+    <div class="container" id="meetings-list"></div>
+    <button class="fab" onclick="openMeetingImport()" aria-label="添加"><svg width="22" height="22" viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><line x1="11" y1="4" x2="11" y2="18"/><line x1="4" y1="11" x2="18" y2="11"/></svg></button>
+</div>
+
+<!-- Meeting Import -->
+<div id="page-meeting-import" class="page">
+    <div class="container" id="meeting-import-container"></div>
+</div>
+
+<!-- Meeting Changes (AI analysis result) -->
+<div id="page-meeting-changes" class="page">
+    <div class="container" id="meeting-changes-container"></div>
+</div>
+
+<!-- Alerts Panel -->
+<div id="alert-panel" class="alert-panel hidden">
+    <div class="alert-panel-header">
+        <span style="font-size:16px;font-weight:700">通知</span>
+        <div style="display:flex;gap:8px">
+            <button class="btn btn-sm btn-ghost" onclick="markAllRead()">全部已读</button>
+            <button class="btn btn-sm btn-ghost" onclick="toggleAlerts()">关闭</button>
+        </div>
+    </div>
+    <div id="alert-list"></div>
+</div>
+
+<!-- Overlay backdrop for alerts -->
+<div id="alert-backdrop" class="modal-overlay hidden" onclick="toggleAlerts()" style="background:transparent;backdrop-filter:none"></div>
+
+<!-- Modal (reusable) -->
+<div id="modal-overlay" class="modal-overlay hidden" onclick="closeModal()">
+    <div class="modal-sheet" onclick="event.stopPropagation()">
+        <div class="modal-handle"></div>
+        <div id="modal-content"></div>
+    </div>
+</div>
+
+<!-- Toast -->
+<div id="toast" class="toast hidden"></div>
+
+<!-- Tab Bar -->
+<div class="tab-bar glass">
+    <button class="tab-btn active" onclick="switchTab('dashboard')" id="tab-dashboard">
+        <svg viewBox="0 0 24 24"><path d="M3 13h8V3H3v10zm0 8h8v-6H3v6zm10 0h8V11h-8v10zm0-18v6h8V3h-8z"/></svg>
+        <span>首页</span>
+    </button>
+    <button class="tab-btn" onclick="switchTab('projects')" id="tab-projects">
+        <svg viewBox="0 0 24 24"><path d="M20 6h-8l-2-2H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm0 12H4V8h16v10z"/></svg>
+        <span>项目</span>
+    </button>
+    <button class="tab-btn" onclick="switchTab('calendar')" id="tab-calendar">
+        <svg viewBox="0 0 24 24"><path d="M19 3h-1V1h-2v2H8V1H6v2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V8h14v11z"/></svg>
+        <span>日历</span>
+    </button>
+    <button class="tab-btn" onclick="switchTab('meetings')" id="tab-meetings">
+        <svg viewBox="0 0 24 24"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V5h14v14zM7 10h2v7H7zm4-3h2v10h-2zm4 6h2v4h-2z"/></svg>
+        <span>会议</span>
+    </button>
+</div>
+
+<!-- AI Chat Widget -->
+<button class="chat-fab" onclick="toggleChat()" title="AI 项目助手">
+<svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <ellipse cx="50" cy="52" rx="28" ry="16" fill="rgba(255,255,255,0.9)"/>
+  <path d="M22 52c0-8.8 12.5-16 28-16s28 7.2 28 16-12.5 16-28 16c-3 0-5.8-.3-8.5-.8L32 72l2-8.5C26.2 60.5 22 56.6 22 52z" fill="rgba(255,255,255,0.85)"/>
+  <ellipse cx="45" cy="48" rx="7" ry="4.5" fill="#7CB5B3" opacity="0.7"/>
+  <ellipse cx="58" cy="48" rx="5" ry="3.5" fill="#82B89C" opacity="0.6"/>
+  <path d="M30 54c4 3 10 5 18 5" stroke="#7CB5B3" stroke-width="1.5" stroke-linecap="round" fill="none" opacity="0.5"/>
+  <g transform="translate(50,50)">
+    <path d="M-12 0C-12-3-8-6-4-6S2-5 4-3C6-1 10 0 14 0C10 0 6 1 4 3C2 5-2 6-4 6S-12 3-12 0Z" fill="#fff" opacity="0.95"/>
+    <circle cx="-5" cy="-1" r="1.5" fill="#3D3D3D"/>
+    <path d="M14 0L19-3M14 0L19 3" stroke="#fff" stroke-width="1" stroke-linecap="round" opacity="0.7"/>
+  </g>
+</svg>
+</button>
+
+<div id="chat-panel" class="chat-panel">
+    <div class="chat-header">
+        <span class="chat-header-title">
+            <svg width="18" height="18" viewBox="0 0 100 100" fill="none"><g transform="translate(50,50)"><path d="M-25 0C-25-6-18-12-8-12S5-10 8-6C11-2 20 0 28 0C20 0 11 2 8 6C5 10-2 12-8 12S-25 6-25 0Z" fill="#7CB5B3"/><circle cx="-10" cy="-2" r="3" fill="#fff"/></g></svg>
+            AI 助手
+        </span>
+        <button class="chat-close" onclick="toggleChat()">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+    </div>
+    <div id="chat-messages" class="chat-messages"></div>
+    <div class="chat-input-bar">
+        <textarea id="chat-input" class="chat-input" placeholder="问问项目情况..." rows="1"
+            onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendChat()}"
+            oninput="this.style.height='auto';this.style.height=Math.min(this.scrollHeight,80)+'px'"></textarea>
+        <button id="chat-send" class="chat-send" onclick="sendChat()">
+            <svg viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+        </button>
+    </div>
+</div>
+
+<!-- Jinja template variables (must be before app.js) -->
+<script>
+var B = '{{ B }}';
+var PHASES = {{ phases|tojson }};
+var PHASE_MAP = {{ phase_map|tojson }};
+var PHASE_COLORS = {{ phase_colors|tojson }};
+var PROJECT_COLORS = {{ project_colors|tojson }};
+var PRIORITIES = {{ priorities|tojson }};
+var PROJECT_STATUS = {{ project_status|tojson }};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+<script src="{{ url_for('static', filename='js/app.js') }}"></script>
+
+</body>
+</html>

@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+*.pyo
+*.db
+*.log
+*.err
+*.access.log
+uploads/
+venv/
+*.bak.*
+*.bak
+.DS_Store
+.env
