@@ -118,23 +118,47 @@ def _can_view_meeting(conn, meeting):
         return meeting["imported_by"] == g.user["id"]
 
 
-def _build_project_context(conn):
-    """Build a text summary of all active projects + tasks for AI analysis."""
-    projects = [dict(r) for r in conn.execute(
-        "SELECT * FROM projects WHERE status='active' ORDER BY updated_at DESC"
-    ).fetchall()]
-    all_tasks = [dict(r) for r in conn.execute(
-        "SELECT t.*, p.name as project_name FROM tasks t "
-        "JOIN projects p ON t.project_id=p.id WHERE p.status='active'"
-    ).fetchall()]
-    all_subtasks = [dict(r) for r in conn.execute(
-        "SELECT s.*, t.name as task_name, t.project_id FROM subtasks s "
-        "JOIN tasks t ON s.task_id=t.id "
-        "JOIN projects p ON t.project_id=p.id WHERE p.status='active'"
-    ).fetchall()]
+def _build_project_context(conn, related_pids=None):
+    """Build a text summary of active projects + tasks for AI analysis.
 
-    lines = []
-    lines.append("=== 当前活跃项目和任务 ===")
+    If related_pids is provided (non-empty list of int), only include those projects.
+    Otherwise fall back to all active projects.
+    """
+    related_pids = [int(x) for x in (related_pids or []) if x is not None]
+    if related_pids:
+        placeholders = ",".join("?" * len(related_pids))
+        projects = [dict(r) for r in conn.execute(
+            f"SELECT * FROM projects WHERE id IN ({placeholders}) ORDER BY updated_at DESC",
+            related_pids,
+        ).fetchall()]
+        all_tasks = [dict(r) for r in conn.execute(
+            f"SELECT t.*, p.name as project_name FROM tasks t "
+            f"JOIN projects p ON t.project_id=p.id WHERE p.id IN ({placeholders})",
+            related_pids,
+        ).fetchall()]
+        all_subtasks = [dict(r) for r in conn.execute(
+            f"SELECT s.*, t.name as task_name, t.project_id FROM subtasks s "
+            f"JOIN tasks t ON s.task_id=t.id "
+            f"JOIN projects p ON t.project_id=p.id WHERE p.id IN ({placeholders})",
+            related_pids,
+        ).fetchall()]
+        scope_label = f"=== 关联项目 (IDs: {','.join(str(i) for i in related_pids)}) ==="
+    else:
+        projects = [dict(r) for r in conn.execute(
+            "SELECT * FROM projects WHERE status='active' ORDER BY updated_at DESC"
+        ).fetchall()]
+        all_tasks = [dict(r) for r in conn.execute(
+            "SELECT t.*, p.name as project_name FROM tasks t "
+            "JOIN projects p ON t.project_id=p.id WHERE p.status='active'"
+        ).fetchall()]
+        all_subtasks = [dict(r) for r in conn.execute(
+            "SELECT s.*, t.name as task_name, t.project_id FROM subtasks s "
+            "JOIN tasks t ON s.task_id=t.id "
+            "JOIN projects p ON t.project_id=p.id WHERE p.status='active'"
+        ).fetchall()]
+        scope_label = "=== 当前活跃项目和任务 ==="
+
+    lines = [scope_label]
     for p in projects:
         ptasks = [t for t in all_tasks if t["project_id"] == p["id"]]
         lines.append(f"\n项目 [ID:{p['id']}]: {p['name']}")
@@ -352,10 +376,17 @@ def analyze_meeting(mid):
         return jsonify({"error": "会议不存在"}), 404
     meeting = dict(row)
 
-    # Build project context
+    # Build project context (scope to related projects if specified)
     t0 = time.monotonic()
-    project_context = _build_project_context(conn)
-    _alog(f"mid={mid} ctx_built len={len(project_context)} in {time.monotonic()-t0:.2f}s")
+    related_pids = []
+    rp_raw = (meeting.get("related_projects") or "").strip()
+    if rp_raw:
+        for x in rp_raw.split(","):
+            x = x.strip()
+            if x.isdigit():
+                related_pids.append(int(x))
+    project_context = _build_project_context(conn, related_pids=related_pids)
+    _alog(f"mid={mid} ctx_built len={len(project_context)} related_pids={related_pids} in {time.monotonic()-t0:.2f}s")
 
     # Call MiniMax API (non-streaming, need structured JSON)
     api_messages = [

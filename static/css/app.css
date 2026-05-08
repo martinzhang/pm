@@ -599,6 +599,8 @@ select.form-input{-webkit-appearance:none;appearance:none;background-image:url("
 .meeting-more-item.danger{color:#c0504d}
 .meeting-more-item.danger:hover{background:rgba(192,80,77,0.08)}
 .change-card{margin-bottom:10px}
+.change-card:hover{transform:none;box-shadow:var(--shadow)}
+.change-card .card-row{margin-bottom:2px}
 .change-group{margin-bottom:14px;border-left:3px solid var(--accent,#3b82f6);border-radius:6px;padding-left:0}
 .change-group .change-card-parent{margin-bottom:0;border-bottom-left-radius:0;border-bottom-right-radius:0;border-bottom:1px dashed var(--border,#e5e7eb)}
 .change-group .change-children{padding:6px 0 6px 18px;background:rgba(0,0,0,0.02);border-bottom-left-radius:6px;border-bottom-right-radius:6px}
@@ -617,10 +619,22 @@ select.form-input{-webkit-appearance:none;appearance:none;background-image:url("
 .checkbox-row{display:flex;align-items:center;gap:6px;font-size:13px;padding:4px 0;color:var(--text)}
 .checkbox-row input{width:15px;height:15px;accent-color:var(--main)}
 .section-title{font-size:14px;font-weight:600;color:var(--text)}
-.badge-blue{background:#E8F0FE;color:#1A73E8}
-.badge-orange{background:#FEF3E8;color:#E8751A}
-.badge-green{background:#E8FEF0;color:#1AE875}
-.badge-gray{background:#F0F0F0;color:#999}
+
+/* ── Badge & card-row (used in meeting changes etc.) ── */
+.badge{
+    display:inline-flex;align-items:center;
+    padding:2px 9px;border-radius:999px;
+    font-size:11.5px;font-weight:600;line-height:1.5;
+    letter-spacing:.2px;white-space:nowrap;
+    border:1px solid transparent;
+}
+.card-row{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+
+/* Badge variants — Morandi theme */
+.badge-blue{background:rgba(149,163,179,0.14);color:#5A6A7A;border-color:rgba(149,163,179,0.22)}
+.badge-orange{background:rgba(200,157,159,0.16);color:#A37176;border-color:rgba(200,157,159,0.28)}
+.badge-green{background:rgba(122,160,130,0.14);color:#5C8868;border-color:rgba(122,160,130,0.24)}
+.badge-gray{background:rgba(138,138,138,0.10);color:#7A7A7A;border-color:rgba(138,138,138,0.18)}
 .spinner{display:inline-block;width:14px;height:14px;border:2px solid #fff;border-top-color:transparent;border-radius:50%;animation:spin .6s linear infinite;vertical-align:middle;margin-right:4px}
 @keyframes spin{to{transform:rotate(360deg)}}
 
