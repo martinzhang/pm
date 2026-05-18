@@ -232,6 +232,17 @@ select.form-input{-webkit-appearance:none;appearance:none;background-image:url("
     position:absolute;top:0;bottom:0;width:2px;
     background:var(--accent);z-index:1;opacity:0.6;
 }
+.gantt-tip{
+    position:fixed;z-index:9999;
+    background:rgba(40,44,52,0.92);color:#fff;
+    font-size:12px;font-weight:500;
+    padding:5px 10px;border-radius:6px;
+    white-space:nowrap;pointer-events:none;
+    transform:translateX(-50%);
+    box-shadow:0 2px 8px rgba(0,0,0,0.18);
+    opacity:0;transition:opacity .12s;
+}
+.gantt-tip.visible{opacity:1}
 
 /* ── Calendar ── */
 .cal-grid{

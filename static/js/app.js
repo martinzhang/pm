@@ -271,7 +271,7 @@ function renderProjectDetail(p) {
         + (p.deadline ? '<span>截止 ' + p.deadline + '</span>' : '') + '</div>'
         + (function() {
             var vt = p.visible_to || [];
-            if (!vt.length) return '<div class="visible-tags mt-8"><span class="visible-tag">仅创建人与任务相关人可见</span></div>';
+            if (!vt.length) return '<div class="visible-tags mt-8"><span class="visible-tag">仅创建人' + (p.owner_name ? '（' + esc(p.owner_name) + '）' : '') + '与任务相关人可见</span></div>';
             var tags = '';
             vt.forEach(function(uname) {
                 var usr = USERS_MAP[uname];
@@ -752,8 +752,8 @@ function ganttShowTooltip(start, end, bar) {
     }
     tip.innerHTML = '<b>' + start + '</b><span style="opacity:.5;margin:0 6px">→</span><b>' + end + '</b>';
     var r = bar.getBoundingClientRect();
-    tip.style.left = (r.left + r.width/2) + 'px';
-    tip.style.top = (r.top - 40) + 'px';
+    tip.style.left = (r.left + r.width / 2) + 'px';
+    tip.style.top = (r.top - 36) + 'px';
     tip.classList.add('visible');
 }
 function ganttHideTooltip() {
