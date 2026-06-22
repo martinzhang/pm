@@ -2,7 +2,7 @@
 AI Blueprint -- AI chat with SSE streaming, file content reading, image description
 """
 import os, json, base64, time, requests
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from flask import Blueprint, request, jsonify, g, Response, stream_with_context
 from models import get_db
 from config import (
@@ -656,7 +656,7 @@ def api_chat_propose_changes():
             parsed = []
         changes = _normalize_change_list(parsed)
 
-        now = datetime.now().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         conn = get_db()
         _ensure_chat_change_tables(conn)
         cur = conn.execute(
@@ -839,7 +839,7 @@ def api_chat_apply_changes(batch_id):
         except Exception as e:
             errors.append(f"#{i} {ctype}: {str(e)}")
 
-    now = datetime.now().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     conn.execute(
         "UPDATE chat_change_batches SET status=?, executed_at=? WHERE id=?",
         ("executed", now, batch_id),

@@ -82,10 +82,20 @@ def api_dashboard():
         "AND end_date<? AND progress<100", (uid, uid_like, today_str)
     ).fetchone()[0]
     unread = conn.execute("SELECT COUNT(*) FROM alerts WHERE user_id=? AND is_read=0", (uid,)).fetchone()[0]
+    # Recently completed tasks (last 14 days) — for showing "逐期完成" / "已完成"
+    recent_completed = conn.execute(
+        "SELECT t.*,p.name as project_name,p.color as project_color "
+        "FROM tasks t JOIN projects p ON t.project_id=p.id "
+        "WHERE (t.assignee_id=? OR t.collaborator_ids LIKE ?) AND t.progress=100 "
+        "AND t.completed_at IS NOT NULL "
+        "AND date(t.completed_at) >= date('now','-14 days') "
+        "ORDER BY t.completed_at DESC LIMIT 10", (uid, uid_like),
+    ).fetchall()
     conn.close()
     return jsonify({
         "total_projects": total_projects,
         "my_tasks": [dict(t) for t in my_tasks],
         "overdue_count": overdue,
         "unread_alerts": unread,
+        "recent_completed": [dict(t) for t in recent_completed],
     })

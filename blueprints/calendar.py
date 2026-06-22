@@ -1,7 +1,7 @@
 """
 Calendar Blueprint -- calendar events CRUD
 """
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from flask import Blueprint, request, jsonify, g
 from models import get_db
 
@@ -48,7 +48,7 @@ def api_create_calendar_event():
         "VALUES (?,?,?,?,?,?,?,?,?,?)",
         (g.user["id"], title, data.get("description", ""), data.get("event_date", date.today().isoformat()),
          data.get("start_time", ""), data.get("end_time", ""), data.get("event_type", "meeting"),
-         data.get("color", "#95A3B3"), data.get("related_project_id"), datetime.now().isoformat()),
+         data.get("color", "#95A3B3"), data.get("related_project_id"), datetime.now(timezone.utc).isoformat()),
     )
     conn.commit()
     conn.close()

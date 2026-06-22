@@ -2,7 +2,7 @@
 Projects -- authentication, user loading, org helpers, access control
 """
 import json, urllib.parse
-from datetime import datetime
+from datetime import datetime, timezone
 from flask import request, g
 from models import get_db
 from config import GATEWAY_USERS_FILE, GATEWAY_ORG_FILE, URL_PREFIX, PHASES, PHASE_MAP, PHASE_COLORS, PROJECT_COLORS, PRIORITIES, PROJECT_STATUS
@@ -22,7 +22,7 @@ def load_user():
         conn.execute(
             "INSERT INTO users (id,username,display_name,role,created_at) "
             "VALUES (?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET display_name=excluded.display_name,role=excluded.role",
-            (uid, uname, dname or uname, role, datetime.now().isoformat()),
+            (uid, uname, dname or uname, role, datetime.now(timezone.utc).isoformat()),
         )
         conn.commit()
         conn.close()

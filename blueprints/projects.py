@@ -2,7 +2,7 @@
 Projects Blueprint -- projects CRUD & project files
 """
 import os, uuid, json, copy
-from datetime import datetime
+from datetime import datetime, timezone
 from flask import Blueprint, request, jsonify, g, render_template, send_from_directory
 from werkzeug.utils import secure_filename
 from models import get_db
@@ -116,7 +116,7 @@ def api_create_project():
     name = (data.get("name") or "").strip()
     if not name:
         return jsonify({"error": "项目名称不能为空"}), 400
-    now = datetime.now().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     conn = get_db()
     visible_to_val = data.get("visible_to", [])
     visible_to_str = json.dumps(visible_to_val) if visible_to_val else ""
@@ -185,7 +185,7 @@ def api_update_project(pid):
         conn.close()
         return jsonify({"error": "无更新"}), 400
     fields.append("updated_at=?")
-    vals.append(datetime.now().isoformat())
+    vals.append(datetime.now(timezone.utc).isoformat())
     vals.append(pid)
     conn.execute(f"UPDATE projects SET {','.join(fields)} WHERE id=?", vals)
     conn.commit()
@@ -246,7 +246,7 @@ def api_upload_project_file(pid):
     conn.execute(
         "INSERT INTO project_files (project_id,filename,original_name,file_size,uploaded_by,uploaded_by_name,created_at) "
         "VALUES (?,?,?,?,?,?,?)",
-        (pid, safe_name, f.filename, file_size, g.user["id"], g.user["name"], datetime.now().isoformat()),
+        (pid, safe_name, f.filename, file_size, g.user["id"], g.user["name"], datetime.now(timezone.utc).isoformat()),
     )
     conn.commit()
     conn.close()

@@ -207,11 +207,35 @@ function loadDashboard() {
                 + '<div class="task-sub">'
                 + '<span style="color:' + (t.project_color || 'var(--main)') + '">' + esc(t.project_name) + '</span>'
                 + '<span>' + (PHASE_MAP[t.phase] || '') + '</span>'
-                + (overdue ? '<span style="color:#E85D5D;font-weight:600">已逾期</span>' : '<span>' + (t.end_date || '') + '</span>')
+                + (overdue ? '<span style="color:#E85D5D;font-weight:600">已逾期</span>' : '<span>' + (t.end_date || '') + (t.start_time||t.end_time ? ' ⏰ ' + (t.start_time||'') + (t.end_time ? (t.start_time?'–':'截止 ')+t.end_time : '') : '') + '</span>')
                 + '</div></div>'
                 + priorityTag(t.priority)
                 + '</div>';
         });
+        // Recently completed (last 14d) — with overdue badge
+        if (d.recent_completed && d.recent_completed.length) {
+            html += '<div class="section-title" style="margin-top:18px;padding:0 4px 8px;font-size:13px;color:var(--muted);font-weight:600">最近完成</div>';
+            d.recent_completed.forEach(function(t) {
+                var badge;
+                if (t.end_date && t.completed_at && t.completed_at.slice(0,10) > t.end_date) {
+                    var cd = t.completed_at.slice(0,10);
+                    var mo = parseInt(cd.slice(5,7),10), dd = parseInt(cd.slice(8,10),10);
+                    badge = '<span style="color:#E85D5D;font-weight:600">逾期完成 · ' + mo + '月' + dd + '日</span>';
+                } else {
+                    badge = '<span style="color:#34C759;font-weight:600">已完成</span>';
+                }
+                html += '<div class="task-item" onclick="openProject(' + t.project_id + ')">'
+                    + progressRing(100, 32)
+                    + '<div class="task-info">'
+                    + '<div class="task-name" style="text-decoration:line-through;opacity:0.7">' + esc(t.name) + '</div>'
+                    + '<div class="task-sub">'
+                    + '<span style="color:' + (t.project_color || 'var(--main)') + '">' + esc(t.project_name) + '</span>'
+                    + badge
+                    + '</div></div>'
+                    + priorityTag(t.priority)
+                    + '</div>';
+            });
+        }
         document.getElementById('dash-tasks').innerHTML = html;
     }, 'GET');
 }
@@ -778,6 +802,11 @@ function openTaskDetail(tid) {
         // Dates
         h += '<div class="form-row"><div class="form-group"><label class="form-label">开始</label><input type="date" class="form-input" value="' + (t.start_date||'') + '" onchange="updateTask(' + t.id + ',{start_date:this.value})"></div>'
             + '<div class="form-group"><label class="form-label">截止</label><input type="date" class="form-input" value="' + (t.end_date||'') + '" onchange="updateTask(' + t.id + ',{end_date:this.value})"></div></div>';
+        // Times (optional) — leave blank for all-day
+        h += '<div class="form-row"><div class="form-group"><label class="form-label">开始时间 <span style="color:var(--text3);font-weight:400;font-size:11px">（可选）</span></label>'
+            + '<input type="time" class="form-input" value="' + (t.start_time||'') + '" onchange="updateTask(' + t.id + ',{start_time:this.value})"></div>'
+            + '<div class="form-group"><label class="form-label">截止时间 <span style="color:var(--text3);font-weight:400;font-size:11px">（可选）</span></label>'
+            + '<input type="time" class="form-input" value="' + (t.end_time||'') + '" onchange="updateTask(' + t.id + ',{end_time:this.value})"></div></div>';
         // Description
         if (t.description) h += '<div class="text-muted mb-8">' + esc(t.description).replace(/\n/g,'<br>') + '</div>';
         h += '<div class="divider"></div>';
@@ -1026,6 +1055,10 @@ function openTaskForm(tid) {
     h += '<div class="form-group"><label class="form-label">描述</label><textarea class="form-input" id="tf-desc" placeholder="任务详情...">' + (t?esc(t.description||''):'') + '</textarea></div>';
     h += '<div class="form-row"><div class="form-group"><label class="form-label">开始</label><input type="date" class="form-input" id="tf-start" value="' + (t?t.start_date||'':new Date().toISOString().slice(0,10)) + '"></div>'
         + '<div class="form-group"><label class="form-label">截止</label><input type="date" class="form-input" id="tf-end" value="' + (t?t.end_date||'':'') + '"></div></div>';
+    h += '<div class="form-row"><div class="form-group"><label class="form-label">开始时间 <span style="color:var(--text3);font-weight:400;font-size:11px">（可选·24h）</span></label>'
+        + '<input type="time" class="form-input" id="tf-start-time" value="' + (t?t.start_time||'':'') + '"></div>'
+        + '<div class="form-group"><label class="form-label">截止时间 <span style="color:var(--text3);font-weight:400;font-size:11px">（可选·24h）</span></label>'
+        + '<input type="time" class="form-input" id="tf-end-time" value="' + (t?t.end_time||'':'') + '"></div></div>';
     h += '<div class="form-row"><div class="form-group"><label class="form-label">阶段</label><select class="form-input" id="tf-phase" onchange="onPhaseSelectChange(this)">';
     var _phaseKeys = PHASES.map(function(p){ return p[0]; });
     var _curPhase = t && t.phase ? t.phase : '';
@@ -1067,6 +1100,8 @@ function saveTask(tid) {
         description: document.getElementById('tf-desc').value,
         start_date: document.getElementById('tf-start').value,
         end_date: document.getElementById('tf-end').value,
+        start_time: (document.getElementById('tf-start-time')||{}).value || '',
+        end_time: (document.getElementById('tf-end-time')||{}).value || '',
         phase: (function(){ var v = document.getElementById('tf-phase').value; return v === '__custom__' ? 'concept' : v; })(),
         priority: document.getElementById('tf-priority').value,
         assignee_id: assigneeId,
@@ -1787,7 +1822,9 @@ function parseDate(s) {
 }
 function timeago(dt) {
     if (!dt) return '';
-    var diff = (Date.now() - new Date(dt).getTime()) / 1000;
+    // Backend stores naive local timestamps; append Z only if no timezone info present
+    var normalized = /[Z+\-]\d{2}:?\d{2}$|Z$/.test(dt) ? dt : dt + 'Z';
+    var diff = (Date.now() - new Date(normalized).getTime()) / 1000;
     if (diff < 60) return '刚刚';
     if (diff < 3600) return Math.floor(diff/60) + '分钟前';
     if (diff < 86400) return Math.floor(diff/3600) + '小时前';
@@ -2525,4 +2562,128 @@ function confirmAllChanges(mid) {
         }
         viewMeeting(mid);
     });
+}
+// ═══════════════════════════════════════════════════════════
+//  Calendar Sync — iCal subscription modal
+// ═══════════════════════════════════════════════════════════
+function openCalendarSync() {
+    fetch(B + '/api/cal/me', { credentials: 'same-origin' })
+        .then(function(r){ return r.json(); })
+        .then(function(d){ renderCalendarSyncModal(d); })
+        .catch(function(){ toast('加载失败', true); });
+}
+
+function renderCalendarSyncModal(d) {
+    var existing = document.getElementById('cal-sync-modal');
+    if (existing) existing.remove();
+
+    var modal = document.createElement('div');
+    modal.id = 'cal-sync-modal';
+    modal.className = 'cal-sync-bg';
+    modal.innerHTML =
+        '<div class="cal-sync-card">' +
+            '<div class="cal-sync-head">' +
+                '<div class="cal-sync-icon">📅</div>' +
+                '<div>' +
+                    '<div class="cal-sync-title">同步到手机日历</div>' +
+                    '<div class="cal-sync-sub">所有分配给你的任务，自动出现在系统日历里</div>' +
+                '</div>' +
+                '<button class="cal-sync-close" onclick="closeCalSync()">×</button>' +
+            '</div>' +
+
+            '<div class="cal-sync-url-row">' +
+                '<input id="cal-sync-url" class="cal-sync-url" readonly value="' + escAttr(d.https_url) + '">' +
+                '<button class="cal-sync-copy" onclick="copyCalUrl()">复制</button>' +
+            '</div>' +
+            '<a class="cal-sync-add-btn" href="' + escAttr(d.webcal_url) + '">' +
+                '<span style="font-size:18px">📲</span> 在 iPhone / iPad 上一键添加' +
+            '</a>' +
+            '<div class="cal-sync-hint">在 iPhone Safari 中打开本页面，点上方按钮，系统会自动弹出"添加订阅"对话框</div>' +
+
+            '<div class="cal-tabs">' +
+                '<button class="cal-tab active" onclick="switchCalTab(this,\'ios\')">iPhone</button>' +
+                '<button class="cal-tab" onclick="switchCalTab(this,\'android\')">安卓</button>' +
+                '<button class="cal-tab" onclick="switchCalTab(this,\'hms\')">鸿蒙</button>' +
+            '</div>' +
+
+            '<div id="cal-tab-ios" class="cal-tab-body">' +
+                '<ol class="cal-steps">' +
+                    '<li>用 iPhone Safari 打开 <code>oa.nevermindcoffee.cn/pm</code></li>' +
+                    '<li>登录后再次点击导航栏的 📅 图标</li>' +
+                    '<li>点 <b>"在 iPhone 上一键添加"</b>，系统弹出 → 点"订阅"</li>' +
+                    '<li>完成！打开"日历"App，就能看到所有任务 ☕</li>' +
+                '</ol>' +
+                '<div class="cal-tip">💡 不在 iPhone 上？复制上方链接 → 设置 → 日历 → 账户 → 添加账户 → 其他 → 添加已订阅的日历 → 粘贴</div>' +
+            '</div>' +
+
+            '<div id="cal-tab-android" class="cal-tab-body" style="display:none">' +
+                '<ol class="cal-steps">' +
+                    '<li>复制上方 URL</li>' +
+                    '<li>电脑浏览器登录 <code>calendar.google.com</code></li>' +
+                    '<li>左侧"其他日历" → <b>"+"</b> → "通过网址添加"</li>' +
+                    '<li>粘贴 URL → 添加日历</li>' +
+                    '<li>手机 Google 日历 App 会自动同步</li>' +
+                '</ol>' +
+                '<div class="cal-tip">💡 用三星日历？设置 → 添加新日历 → 网络日历，同样粘贴 URL</div>' +
+            '</div>' +
+
+            '<div id="cal-tab-hms" class="cal-tab-body" style="display:none">' +
+                '<ol class="cal-steps">' +
+                    '<li>复制上方 URL</li>' +
+                    '<li>华为日历 App → 我 → 设置 → 添加日历账户</li>' +
+                    '<li>选 <b>CalDAV / 订阅日历</b> → 粘贴 URL</li>' +
+                    '<li>命名为"奈娃 PM"，完成</li>' +
+                '</ol>' +
+                '<div class="cal-tip">💡 鸿蒙日历支持 webcal 订阅，刷新频率约 1 小时</div>' +
+            '</div>' +
+
+            '<div class="cal-sync-foot">' +
+                '<div class="cal-sync-info">🔒 链接含你的私人 token，请勿分享。每小时自动刷新。</div>' +
+                '<button class="cal-sync-regen" onclick="regenCalToken()">重置链接</button>' +
+            '</div>' +
+        '</div>';
+    document.body.appendChild(modal);
+    modal.addEventListener('click', function(e){
+        if (e.target === modal) closeCalSync();
+    });
+}
+
+function closeCalSync() {
+    var m = document.getElementById('cal-sync-modal');
+    if (m) m.remove();
+}
+
+function copyCalUrl() {
+    var input = document.getElementById('cal-sync-url');
+    if (!input) return;
+    input.select();
+    input.setSelectionRange(0, 99999);
+    try {
+        navigator.clipboard.writeText(input.value).then(function(){
+            toast('已复制 ✓');
+        }, function(){ document.execCommand('copy'); toast('已复制 ✓'); });
+    } catch(e) {
+        document.execCommand('copy');
+        toast('已复制 ✓');
+    }
+}
+
+function switchCalTab(btn, key) {
+    document.querySelectorAll('.cal-tab').forEach(function(b){ b.classList.remove('active'); });
+    btn.classList.add('active');
+    ['ios','android','hms'].forEach(function(k){
+        var el = document.getElementById('cal-tab-' + k);
+        if (el) el.style.display = k === key ? 'block' : 'none';
+    });
+}
+
+function regenCalToken() {
+    if (!confirm('确定重置链接吗？旧的订阅会失效，需要在手机上重新添加。')) return;
+    fetch(B + '/api/cal/regenerate', { method: 'POST', credentials: 'same-origin' })
+        .then(function(r){ return r.json(); })
+        .then(function(){ toast('已重置，请重新订阅'); openCalendarSync(); });
+}
+
+function escAttr(s) {
+    return String(s || '').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
 }

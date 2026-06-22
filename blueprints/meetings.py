@@ -2,7 +2,7 @@
 Meetings Blueprint -- meeting minutes import, AI analysis, change confirmation
 """
 import json, os, re, sys, time, requests
-from datetime import datetime, date
+from datetime import datetime, date, timezone
 from flask import Blueprint, request, jsonify, g
 from models import get_db
 from config import (
@@ -15,7 +15,7 @@ bp = Blueprint("meetings", __name__)
 
 def _alog(msg):
     """Stderr log helper -- routed to pm.err by launchd."""
-    print(f"[{datetime.now().isoformat(timespec='seconds')}] [analyze] {msg}",
+    print(f"[{datetime.now(timezone.utc).isoformat(timespec='seconds')}] [analyze] {msg}",
           file=sys.stderr, flush=True)
 
 # Phase-1 text-based file import: markdown / plain text / csv only
@@ -306,7 +306,7 @@ def create_meeting():
     if not content:
         return jsonify({"error": "会议内容不能为空"}), 400
 
-    now = datetime.now().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     conn = get_db()
     cur = conn.execute(
         "INSERT INTO meeting_minutes (title, meeting_date, content, related_projects, "
@@ -555,7 +555,7 @@ def confirm_change(mid, cid):
         conn.close()
         return jsonify({"error": f"执行失败: {result['error']}", "result": result}), 400
 
-    now = datetime.now().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     final_nv = json.dumps(nv, ensure_ascii=False) if isinstance(nv, dict) else change["new_value"]
     result_id = result.get("created_id") or result.get("updated_id") or result.get("completed_id") if isinstance(result, dict) else None
     conn.execute(
@@ -591,7 +591,7 @@ def confirm_all(mid):
         (mid,),
     ).fetchall()]
 
-    now = datetime.now().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     confirmed = 0
     errors = []
     # ref_map starts from already-confirmed changes; will grow as we execute pending ones
@@ -713,7 +713,7 @@ def _resolve_user_names_to_ids(conn, names):
 
 def _execute_change(conn, change_type, target_type, target_id, new_value):
     """Execute a single change against the database."""
-    now = datetime.now().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
 
     if change_type == "create_project":
         cur = conn.execute(

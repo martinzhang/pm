@@ -2,7 +2,8 @@
 Projects Blueprint -- tasks, subtasks, task files, comments
 """
 import os, uuid
-from datetime import datetime
+from datetime import datetime, timezone
+import re
 from flask import Blueprint, request, jsonify, g, send_from_directory
 from werkzeug.utils import secure_filename
 from models import get_db
@@ -29,13 +30,34 @@ def _norm_collab_ids(val):
 
 
 # ── Tasks CRUD ──
+
+_TIME_RE = re.compile(r"^\d{2}:\d{2}$")
+
+def _norm_time(val):
+    """Return HH:MM string, or None if empty/invalid."""
+    if val is None:
+        return None
+    v = str(val).strip()
+    if not v:
+        return None
+    if not _TIME_RE.match(v):
+        return None
+    h, m = v.split(":")
+    try:
+        hi, mi = int(h), int(m)
+    except Exception:
+        return None
+    if not (0 <= hi <= 23 and 0 <= mi <= 59):
+        return None
+    return f"{hi:02d}:{mi:02d}"
+
 @bp.route("/api/projects/<int:pid>/tasks", methods=["POST"])
 def api_create_task(pid):
     data = request.get_json(force=True)
     name = (data.get("name") or "").strip()
     if not name:
         return jsonify({"error": "任务名称不能为空"}), 400
-    now = datetime.now().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     today = now[:10]
     conn = get_db()
     if not get_project_access(conn, pid, g.user):
@@ -43,14 +65,17 @@ def api_create_task(pid):
         return jsonify({"error": "无权访问此项目"}), 403
     mx = conn.execute("SELECT COALESCE(MAX(sort_order),0)+1 FROM tasks WHERE project_id=?", (pid,)).fetchone()[0]
     collab_ids = _norm_collab_ids(data.get("collaborator_ids")) or ""
+    st_time = _norm_time(data.get("start_time"))
+    en_time = _norm_time(data.get("end_time"))
     cur = conn.execute(
         "INSERT INTO tasks (project_id,name,description,assignee_id,assignee_name,phase,priority,"
-        "start_date,end_date,progress,sort_order,depends_on,collaborator_ids,created_at,updated_at) "
-        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        "start_date,end_date,start_time,end_time,progress,sort_order,depends_on,collaborator_ids,created_at,updated_at) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         (pid, name, data.get("description", ""),
          data.get("assignee_id", ""), data.get("assignee_name", ""),
          data.get("phase", "concept"), data.get("priority", "medium"),
          data.get("start_date", today), data.get("end_date", today),
+         st_time, en_time,
          data.get("progress", 0), mx, data.get("depends_on", ""), collab_ids, now, now),
     )
     conn.execute("UPDATE projects SET updated_at=? WHERE id=?", (now, pid))
@@ -116,17 +141,37 @@ def api_update_task(tid):
         prev_set = set((prev["collaborator_ids"] or "").split(",")) if prev else set()
         new_set = set(new_val.split(","))
         new_collab_added = [x for x in new_set - prev_set if x]
+    # Normalize optional times before write
+    if "start_time" in data:
+        data["start_time"] = _norm_time(data.get("start_time"))
+    if "end_time" in data:
+        data["end_time"] = _norm_time(data.get("end_time"))
     fields, vals = [], []
     for k in ("name", "description", "assignee_id", "assignee_name", "phase",
-              "priority", "start_date", "end_date", "progress", "sort_order",
-              "depends_on", "collaborator_ids"):
+              "priority", "start_date", "end_date", "start_time", "end_time",
+              "progress", "sort_order", "depends_on", "collaborator_ids"):
         if k in data:
             fields.append(f"{k}=?")
             vals.append(data[k])
     if not fields:
         conn.close()
         return jsonify({"error": "无更新"}), 400
-    now = datetime.now().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
+    # Track completion timestamp: set on first transition to 100, clear if reopened
+    if "progress" in data:
+        try:
+            new_prog = int(data["progress"])
+        except Exception:
+            new_prog = None
+        if new_prog is not None:
+            prev_prog_row = conn.execute("SELECT progress, completed_at FROM tasks WHERE id=?", (tid,)).fetchone()
+            prev_prog = prev_prog_row["progress"] if prev_prog_row else 0
+            if new_prog >= 100 and prev_prog < 100:
+                fields.append("completed_at=?")
+                vals.append(now)
+            elif new_prog < 100 and prev_prog >= 100:
+                fields.append("completed_at=?")
+                vals.append(None)
     fields.append("updated_at=?")
     vals.append(now)
     vals.append(tid)
@@ -190,7 +235,7 @@ def api_create_subtask(tid):
         conn.close()
         return jsonify({"error": "无权访问此任务"}), 403
     conn.execute("INSERT INTO subtasks (task_id,content,is_done,created_at) VALUES (?,?,0,?)",
-                 (tid, content, datetime.now().isoformat()))
+                 (tid, content, datetime.now(timezone.utc).isoformat()))
     conn.commit()
     conn.close()
     return jsonify({"success": True})
@@ -256,7 +301,7 @@ def api_upload_file(tid):
     conn.execute(
         "INSERT INTO task_files (task_id,filename,original_name,file_size,uploaded_by,uploaded_by_name,created_at) "
         "VALUES (?,?,?,?,?,?,?)",
-        (tid, safe_name, f.filename, file_size, g.user["id"], g.user["name"], datetime.now().isoformat()),
+        (tid, safe_name, f.filename, file_size, g.user["id"], g.user["name"], datetime.now(timezone.utc).isoformat()),
     )
     conn.commit()
     conn.close()
@@ -309,7 +354,7 @@ def api_create_comment(tid):
     content = (data.get("content") or "").strip()
     if not content:
         return jsonify({"error": "评论不能为空"}), 400
-    now = datetime.now().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     conn = get_db()
     _, access = check_task_access(conn, tid, g.user)
     if not access:

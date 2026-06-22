@@ -228,6 +228,19 @@ select.form-input{-webkit-appearance:none;appearance:none;background-image:url("
     position:absolute;left:0;top:0;bottom:0;
     border-radius:6px;opacity:0.3;background:#fff;
 }
+.gantt-bar-depend{
+    position:absolute;right:2px;top:50%;
+    width:13px;height:13px;border-radius:50%;
+    background:var(--main);border:2px solid #fff;
+    box-shadow:0 1px 3px rgba(0,0,0,0.25);
+    transform:translateY(-50%) scale(0);
+    transition:transform 0.15s cubic-bezier(0.34,1.56,0.64,1);
+    cursor:crosshair;z-index:3;touch-action:none;
+}
+.gantt-bar:hover .gantt-bar-depend{transform:translateY(-50%) scale(1)}
+.gantt-bar-depend:hover{transform:translateY(-50%) scale(1.35)}
+.gantt-bar.depend-target{outline:2px solid var(--main);outline-offset:2px}
+
 .gantt-today-line{
     position:absolute;top:0;bottom:0;width:2px;
     background:var(--accent);z-index:1;opacity:0.6;
@@ -656,3 +669,155 @@ select.form-input{-webkit-appearance:none;appearance:none;background-image:url("
 .mt-upload-btn.loading{opacity:.6;pointer-events:none}
 .mt-upload-btn svg{display:block}
 .mt-upload-label{font-size:12px}
+/* ── Calendar Sync Modal ─────────────────────────────────── */
+.cal-sync-bg {
+    position: fixed; inset: 0; z-index: 9999;
+    background: rgba(0,0,0,0.35);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    display: grid; place-items: center; padding: 20px;
+    animation: calSyncFadeIn 0.2s ease-out;
+}
+@keyframes calSyncFadeIn { from { opacity: 0; } to { opacity: 1; } }
+.cal-sync-card {
+    background: #fff; width: 100%; max-width: 540px;
+    border-radius: 22px;
+    padding: 24px;
+    box-shadow: 0 16px 56px rgba(0,0,0,0.18);
+    max-height: 90vh; overflow-y: auto;
+    animation: calSyncPop 0.32s cubic-bezier(0.34,1.56,0.64,1);
+}
+@keyframes calSyncPop {
+    from { opacity: 0; transform: scale(0.92) translateY(8px); }
+    to   { opacity: 1; transform: scale(1) translateY(0); }
+}
+.cal-sync-head {
+    display: flex; align-items: flex-start; gap: 14px;
+    margin-bottom: 18px;
+}
+.cal-sync-icon {
+    width: 48px; height: 48px; border-radius: 14px;
+    background: linear-gradient(135deg, #B8946A, #8B6F47);
+    color: #fff; font-size: 26px;
+    display: grid; place-items: center;
+    box-shadow: 0 4px 14px rgba(139,111,71,0.25);
+    flex-shrink: 0;
+}
+.cal-sync-title { font-size: 18px; font-weight: 700; color: var(--text1); letter-spacing: -0.2px; }
+.cal-sync-sub   { font-size: 13px; color: var(--text3); margin-top: 4px; line-height: 1.4; }
+.cal-sync-close {
+    margin-left: auto;
+    width: 32px; height: 32px; border-radius: 50%;
+    background: rgba(120,120,128,0.16);
+    border: none; cursor: pointer;
+    font-size: 20px; color: var(--text2);
+    display: grid; place-items: center;
+    transition: transform 0.15s, background 0.15s;
+}
+.cal-sync-close:hover { background: rgba(120,120,128,0.26); }
+.cal-sync-close:active { transform: scale(0.9); }
+
+.cal-sync-url-row {
+    display: flex; gap: 8px; margin-bottom: 10px;
+}
+.cal-sync-url {
+    flex: 1;
+    padding: 12px 14px;
+    background: rgba(120,120,128,0.10);
+    border: 1px solid transparent;
+    border-radius: 12px;
+    font-size: 13px;
+    font-family: -apple-system, Menlo, monospace;
+    color: var(--text2);
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.cal-sync-url:focus { border-color: #8B6F47; background: #fff; outline: none; }
+.cal-sync-copy {
+    padding: 0 18px;
+    background: #8B6F47; color: #fff;
+    border: none; border-radius: 12px;
+    font-size: 14px; font-weight: 600;
+    cursor: pointer;
+    transition: transform 0.15s, background 0.15s;
+}
+.cal-sync-copy:active { transform: scale(0.96); }
+.cal-sync-copy:hover  { background: #74583A; }
+
+.cal-sync-add-btn {
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    width: 100%; padding: 14px;
+    background: linear-gradient(135deg, #B8946A, #8B6F47);
+    color: #fff; text-decoration: none;
+    border-radius: 14px;
+    font-size: 15px; font-weight: 600;
+    margin: 6px 0 8px;
+    box-shadow: 0 4px 14px rgba(139,111,71,0.22);
+    transition: transform 0.15s, box-shadow 0.15s;
+}
+.cal-sync-add-btn:hover { box-shadow: 0 6px 18px rgba(139,111,71,0.32); }
+.cal-sync-add-btn:active { transform: scale(0.98); }
+
+.cal-sync-hint {
+    font-size: 12px; color: var(--text3);
+    text-align: center; line-height: 1.5;
+    margin-bottom: 18px; padding: 0 8px;
+}
+
+.cal-tabs {
+    display: flex; gap: 4px; padding: 4px;
+    background: rgba(120,120,128,0.12);
+    border-radius: 12px; margin-bottom: 14px;
+}
+.cal-tab {
+    flex: 1; padding: 8px;
+    background: none; border: none; cursor: pointer;
+    border-radius: 9px;
+    font-size: 14px; font-weight: 600;
+    color: var(--text3);
+    transition: all 0.22s ease;
+}
+.cal-tab.active {
+    background: #fff; color: var(--text1);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+}
+
+.cal-tab-body { animation: calSyncFadeIn 0.25s; }
+.cal-steps {
+    margin: 0; padding-left: 22px;
+    font-size: 14px; line-height: 1.7; color: var(--text2);
+}
+.cal-steps li { margin-bottom: 4px; }
+.cal-steps code {
+    background: rgba(120,120,128,0.14);
+    padding: 1px 6px; border-radius: 5px;
+    font-size: 12px;
+}
+.cal-tip {
+    margin-top: 12px; padding: 10px 12px;
+    background: rgba(184,148,106,0.10);
+    border-radius: 10px;
+    font-size: 12px; color: var(--text2); line-height: 1.5;
+}
+
+.cal-sync-foot {
+    display: flex; align-items: center; gap: 12px;
+    margin-top: 18px; padding-top: 14px;
+    border-top: 1px solid rgba(120,120,128,0.16);
+}
+.cal-sync-info { flex: 1; font-size: 11.5px; color: var(--text3); line-height: 1.4; }
+.cal-sync-regen {
+    padding: 7px 12px;
+    background: rgba(231,76,60,0.10);
+    color: #C0392B; border: none; border-radius: 8px;
+    font-size: 12px; font-weight: 600; cursor: pointer;
+    transition: background 0.15s, transform 0.15s;
+}
+.cal-sync-regen:hover  { background: rgba(231,76,60,0.18); }
+.cal-sync-regen:active { transform: scale(0.96); }
+
+@media (max-width: 480px) {
+    .cal-sync-card { padding: 18px; border-radius: 18px; }
+    .cal-sync-icon { width: 40px; height: 40px; font-size: 22px; }
+    .cal-sync-title { font-size: 16px; }
+}

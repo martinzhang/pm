@@ -195,3 +195,28 @@ def run_migrations():
         c.close()
     except Exception:
         pass
+
+    # Migrate: add completed_at column to tasks; backfill from updated_at where progress=100
+    try:
+        c = get_db()
+        cols = [r[1] for r in c.execute("PRAGMA table_info(tasks)").fetchall()]
+        if "completed_at" not in cols:
+            c.execute("ALTER TABLE tasks ADD COLUMN completed_at TEXT")
+            c.execute("UPDATE tasks SET completed_at=updated_at WHERE progress=100 AND completed_at IS NULL")
+            c.commit()
+        c.close()
+    except Exception:
+        pass
+
+    # Migrate: add start_time/end_time (HH:MM) to tasks for timed events
+    try:
+        c = get_db()
+        cols = [r[1] for r in c.execute("PRAGMA table_info(tasks)").fetchall()]
+        if "start_time" not in cols:
+            c.execute("ALTER TABLE tasks ADD COLUMN start_time TEXT")
+        if "end_time" not in cols:
+            c.execute("ALTER TABLE tasks ADD COLUMN end_time TEXT")
+        c.commit()
+        c.close()
+    except Exception:
+        pass
