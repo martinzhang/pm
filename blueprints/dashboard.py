@@ -71,7 +71,9 @@ def api_dashboard():
     uid_like = f"%{uid}%"
     my_tasks = conn.execute(
         "SELECT t.*,p.name as project_name,p.color as project_color,"
-        "CASE WHEN t.assignee_id=? THEN 'owner' ELSE 'collaborator' END as my_role "
+        "CASE WHEN t.assignee_id=? THEN 'owner' ELSE 'collaborator' END as my_role,"
+        "(SELECT COUNT(*) FROM comments WHERE task_id=t.id) as comment_count,"
+        "(SELECT COUNT(*) FROM task_files WHERE task_id=t.id) as file_count "
         "FROM tasks t JOIN projects p ON t.project_id=p.id "
         "WHERE (t.assignee_id=? OR t.collaborator_ids LIKE ?) AND t.progress<100 "
         "ORDER BY t.end_date ASC LIMIT 20", (uid, uid, uid_like),

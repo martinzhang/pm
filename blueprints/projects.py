@@ -144,7 +144,10 @@ def api_get_project(pid):
         return jsonify({"error": "无权访问此项目"}), 403
     p = dict(row)
     tasks = conn.execute(
-        "SELECT * FROM tasks WHERE project_id=? ORDER BY COALESCE(start_date,'9999-12-31'), sort_order, id", (pid,)
+        "SELECT t.*,"
+        "(SELECT COUNT(*) FROM comments WHERE task_id=t.id) as comment_count,"
+        "(SELECT COUNT(*) FROM task_files WHERE task_id=t.id) as file_count "
+        "FROM tasks t WHERE t.project_id=? ORDER BY COALESCE(t.start_date,'9999-12-31'), t.sort_order, t.id", (pid,)
     ).fetchall()
     p["tasks"] = [dict(t) for t in tasks]
     s = conn.execute(

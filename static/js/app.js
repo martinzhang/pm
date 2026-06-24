@@ -200,6 +200,17 @@ function loadDashboard() {
         }
         d.my_tasks.forEach(function(t) {
             var overdue = t.end_date && t.end_date < new Date().toISOString().slice(0,10) && t.progress < 100;
+            var metaBadges = '';
+            if (t.comment_count > 0) {
+                metaBadges += '<span class="task-meta-badge" title="' + t.comment_count + ' 条讨论">'
+                    + '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" width="11" height="11"><path d="M14 2H2a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h3l2 2 2-2h5a1 1 0 0 0 1-1V3a1 1 0 0 0-1-1z"/></svg>'
+                    + ' ' + t.comment_count + '</span>';
+            }
+            if (t.file_count > 0) {
+                metaBadges += '<span class="task-meta-badge" title="' + t.file_count + ' 个附件">'
+                    + '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" width="11" height="11"><path d="M13.5 8.5l-6 6a3.5 3.5 0 0 1-4.95-4.95l7-7a2 2 0 0 1 2.83 2.83l-6.5 6.5a.5.5 0 0 1-.71-.71L11 5"/></svg>'
+                    + ' ' + t.file_count + '</span>';
+            }
             html += '<div class="task-item" onclick="openProject(' + t.project_id + ')">'
                 + progressRing(t.progress, 32)
                 + '<div class="task-info">'
@@ -208,6 +219,7 @@ function loadDashboard() {
                 + '<span style="color:' + (t.project_color || 'var(--main)') + '">' + esc(t.project_name) + '</span>'
                 + '<span>' + (PHASE_MAP[t.phase] || '') + '</span>'
                 + (overdue ? '<span style="color:#E85D5D;font-weight:600">已逾期</span>' : '<span>' + (t.end_date || '') + (t.start_time||t.end_time ? ' ⏰ ' + (t.start_time||'') + (t.end_time ? (t.start_time?'–':'截止 ')+t.end_time : '') : '') + '</span>')
+                + (metaBadges ? '<span class="task-meta-badges">' + metaBadges + '</span>' : '')
                 + '</div></div>'
                 + priorityTag(t.priority)
                 + '<button class="dash-done-btn" title="标记完成" onclick="event.stopPropagation();quickCompleteTask(' + t.id + ',100);this.closest(\'.task-item\').style.opacity=\'0.4\'">'
@@ -370,6 +382,17 @@ function taskItemHtml(t) {
         ? ' <span class="collab-badge" title="' + collabCount + ' 位协作者">+' + collabCount + '</span>'
         : '';
     var isDone = t.progress >= 100;
+    var metaBadges = '';
+    if (t.comment_count > 0) {
+        metaBadges += '<span class="task-meta-badge" title="' + t.comment_count + ' 条讨论">'
+            + '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" width="11" height="11"><path d="M14 2H2a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h3l2 2 2-2h5a1 1 0 0 0 1-1V3a1 1 0 0 0-1-1z"/></svg>'
+            + ' ' + t.comment_count + '</span>';
+    }
+    if (t.file_count > 0) {
+        metaBadges += '<span class="task-meta-badge" title="' + t.file_count + ' 个附件">'
+            + '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" width="11" height="11"><path d="M13.5 8.5l-6 6a3.5 3.5 0 0 1-4.95-4.95l7-7a2 2 0 0 1 2.83 2.83l-6.5 6.5a.5.5 0 0 1-.71-.71L11 5"/></svg>'
+            + ' ' + t.file_count + '</span>';
+    }
     return '<div class="task-item' + (isDone ? ' task-done' : '') + '" onclick="openTaskDetail(' + t.id + ')">'
         + progressRing(t.progress, 32)
         + '<div class="task-info">'
@@ -378,6 +401,7 @@ function taskItemHtml(t) {
         + '<div class="task-sub">'
         + (t.assignee_name ? '<span>' + esc(t.assignee_name) + collabBadge + '</span>' : (collabCount > 0 ? '<span>未分配' + collabBadge + '</span>' : ''))
         + '<span>' + (t.start_date||'') + ' ~ ' + (t.end_date||'') + '</span>'
+        + (metaBadges ? '<span class="task-meta-badges">' + metaBadges + '</span>' : '')
         + '</div></div>'
         + priorityTag(t.priority)
         + '<button class="dash-done-btn' + (isDone ? ' dash-done-btn-reopen' : '') + '" title="' + (isDone ? '重新开启' : '标记完成') + '" '
