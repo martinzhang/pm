@@ -440,8 +440,9 @@ select.form-input{-webkit-appearance:none;appearance:none;background-image:url("
     opacity:0.5;transition:opacity .15s;
 }
 .comment-del-btn:hover{opacity:1;color:var(--danger)}
-.comment-input-wrap{display:flex;gap:8px;margin-top:12px}
+.comment-input-wrap{display:flex;gap:8px;margin-top:12px;align-items:flex-end}
 .comment-input-wrap input{flex:1}
+.comment-textarea{flex:1;resize:none;overflow:hidden;min-height:34px;line-height:1.5;padding-top:6px;padding-bottom:6px}
 
 /* ── Dashboard ── */
 .dash-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:16px}

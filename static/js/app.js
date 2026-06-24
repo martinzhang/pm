@@ -867,7 +867,7 @@ function openTaskDetail(tid) {
                 + (isMine ? '<button class="comment-del-btn" onclick="deleteComment(' + c.id + ',' + t.id + ')" title="删除">&#x1F5D1;</button>' : '')
                 + '<div class="comment-text">' + esc(c.content).replace(/\n/g,'<br>') + '</div></div></div>';
         });
-        h += '<div class="comment-input-wrap"><input type="text" class="form-input" id="new-comment" placeholder="说点什么...">'
+        h += '<div class="comment-input-wrap"><textarea class="form-input comment-textarea" id="new-comment" placeholder="说点什么..." rows="1" oninput="this.style.height=\'auto\';this.style.height=this.scrollHeight+\'px\'"></textarea>'
             + '<button class="btn btn-sm btn-primary" onclick="addComment(' + t.id + ')">发送</button></div>';
 
         // Actions
