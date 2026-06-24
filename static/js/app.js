@@ -210,6 +210,9 @@ function loadDashboard() {
                 + (overdue ? '<span style="color:#E85D5D;font-weight:600">已逾期</span>' : '<span>' + (t.end_date || '') + (t.start_time||t.end_time ? ' ⏰ ' + (t.start_time||'') + (t.end_time ? (t.start_time?'–':'截止 ')+t.end_time : '') : '') + '</span>')
                 + '</div></div>'
                 + priorityTag(t.priority)
+                + '<button class="dash-done-btn" title="标记完成" onclick="event.stopPropagation();quickCompleteTask(' + t.id + ',100);this.closest(\'.task-item\').style.opacity=\'0.4\'">'
+                + '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4,10 8,14 16,6"/></svg>'
+                + '</button>'
                 + '</div>';
         });
         // Recently completed (last 14d) — with overdue badge
@@ -280,7 +283,12 @@ function openProject(pid) {
         renderProjectDetail(p);
     }, 'GET');
 }
-function reloadProject() { if (currentProject) openProject(currentProject.id); }
+function reloadProject() {
+    if (!currentProject) return;
+    var listEl = document.getElementById('list-view');
+    window._keepView = listEl && listEl.style.display !== 'none' ? 'list' : 'gantt';
+    openProject(currentProject.id);
+}
 
 function renderProjectDetail(p) {
     var html = '';
@@ -346,6 +354,7 @@ function renderProjectDetail(p) {
 
     document.getElementById('project-detail').innerHTML = html;
     setTimeout(ganttAttachHandlers, 0);
+    if (window._keepView) { setView(window._keepView); window._keepView = null; }
 }
 
 function setView(v) {
@@ -360,7 +369,8 @@ function taskItemHtml(t) {
     var collabBadge = collabCount > 0
         ? ' <span class="collab-badge" title="' + collabCount + ' 位协作者">+' + collabCount + '</span>'
         : '';
-    return '<div class="task-item" onclick="openTaskDetail(' + t.id + ')">'
+    var isDone = t.progress >= 100;
+    return '<div class="task-item' + (isDone ? ' task-done' : '') + '" onclick="openTaskDetail(' + t.id + ')">'
         + progressRing(t.progress, 32)
         + '<div class="task-info">'
         + '<div class="task-name"><span class="tag phase-tag" style="background:' + (PHASE_COLORS[t.phase]||'#95A3B3') + ';font-size:10px;padding:1px 6px">'
@@ -370,7 +380,14 @@ function taskItemHtml(t) {
         + '<span>' + (t.start_date||'') + ' ~ ' + (t.end_date||'') + '</span>'
         + '</div></div>'
         + priorityTag(t.priority)
+        + '<button class="dash-done-btn' + (isDone ? ' dash-done-btn-reopen' : '') + '" title="' + (isDone ? '重新开启' : '标记完成') + '" '
+        + 'onclick="event.stopPropagation();quickCompleteTask(' + t.id + ',' + (isDone ? 0 : 100) + ')">'
+        + '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4,10 8,14 16,6"/></svg>'
+        + '</button>'
         + '</div>';
+}
+function quickCompleteTask(tid, progress) {
+    api('/api/tasks/' + tid, {progress: progress}, function(){ reloadProject(); toast(progress >= 100 ? '已完成 ✓' : '已重新开启'); }, 'PUT');
 }
 
 // ── Gantt ──
@@ -852,8 +869,14 @@ function openTaskDetail(tid) {
             + '<button class="btn btn-sm btn-primary" onclick="addComment(' + t.id + ')">发送</button></div>';
 
         // Actions
-        h += '<div class="divider"></div><div style="display:flex;gap:8px;flex-wrap:wrap">'
-            + '<button class="btn btn-sm btn-ghost" onclick="openTaskForm(' + t.id + ')">编辑任务</button>'
+        var isDone = t.progress >= 100;
+        h += '<div class="divider"></div><div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">';
+        if (isDone) {
+            h += '<button class="btn btn-sm btn-reopen" onclick="updateTask(' + t.id + ',{progress:0});closeModal()">↩ 重新开启</button>';
+        } else {
+            h += '<button class="btn btn-sm btn-complete" onclick="updateTask(' + t.id + ',{progress:100});closeModal()">✓ 标记完成</button>';
+        }
+        h += '<button class="btn btn-sm btn-ghost" onclick="openTaskForm(' + t.id + ')">编辑任务</button>'
             + '<button class="btn btn-sm btn-danger" onclick="if(confirm(\'确定删除?\'))deleteTask(' + t.id + ')">删除</button>'
             + '</div>';
         openModal(h);

@@ -1,11 +1,44 @@
 """
 Projects -- authentication, user loading, org helpers, access control
 """
-import json, urllib.parse
+import json, os, urllib.parse
 from datetime import datetime, timezone
 from flask import request, g
 from models import get_db
 from config import GATEWAY_USERS_FILE, GATEWAY_ORG_FILE, URL_PREFIX, PHASES, PHASE_MAP, PHASE_COLORS, PROJECT_COLORS, PRIORITIES, PROJECT_STATUS
+
+_ENV_LOCAL = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env.local")
+
+
+def _load_env_local():
+    """Parse .env.local and return dict of key=value pairs."""
+    env = {}
+    try:
+        with open(_ENV_LOCAL, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                k, _, v = line.partition("=")
+                env[k.strip()] = v.strip()
+    except FileNotFoundError:
+        pass
+    return env
+
+
+def _dev_user_from_db(username):
+    """Look up a user by username from the users table. Returns (id, username, display_name, role) or None."""
+    try:
+        conn = get_db()
+        row = conn.execute(
+            "SELECT id, username, display_name, role FROM users WHERE username=?", (username,)
+        ).fetchone()
+        conn.close()
+        if row:
+            return row["id"], row["username"], row["display_name"] or row["username"], row["role"]
+    except Exception:
+        pass
+    return None
 
 
 def load_user():
@@ -14,8 +47,19 @@ def load_user():
     uname = request.headers.get("X-Auth-User", "")
     dname = urllib.parse.unquote(request.headers.get("X-Auth-Name", "") or "")
     role = request.headers.get("X-Auth-Role", "member")
+
     if not uid:
-        uid, uname, dname, role = "local", "local", "本地用户", "admin"
+        # 开发模式：优先读 .env.local 中的 DEV_USER
+        dev_username = _load_env_local().get("DEV_USER", "").strip()
+        if dev_username:
+            found = _dev_user_from_db(dev_username)
+            if found:
+                uid, uname, dname, role = found
+            else:
+                uid, uname, dname, role = "local", dev_username, dev_username, "member"
+        else:
+            uid, uname, dname, role = "local", "local", "本地用户", "admin"
+
     g.user = {"id": uid, "username": uname, "name": dname or uname, "role": role}
     try:
         conn = get_db()
