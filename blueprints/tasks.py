@@ -393,3 +393,19 @@ def api_create_comment(tid):
     conn.commit()
     conn.close()
     return jsonify({"success": True})
+
+
+@bp.route("/api/comments/<int:cid>", methods=["DELETE"])
+def api_delete_comment(cid):
+    conn = get_db()
+    row = conn.execute("SELECT user_id, task_id FROM comments WHERE id=?", (cid,)).fetchone()
+    if not row:
+        conn.close()
+        return jsonify({"error": "评论不存在"}), 404
+    if row["user_id"] != g.user["id"]:
+        conn.close()
+        return jsonify({"error": "只能删除自己的评论"}), 403
+    conn.execute("DELETE FROM comments WHERE id=?", (cid,))
+    conn.commit()
+    conn.close()
+    return jsonify({"success": True})

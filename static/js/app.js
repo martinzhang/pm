@@ -859,10 +859,12 @@ function openTaskDetail(tid) {
         // Comments
         h += '<div class="divider"></div><div class="section-title">讨论</div>';
         t.comments.forEach(function(c) {
+            var isMine = ME && c.user_id === ME.id;
             h += '<div class="comment-item">'
                 + '<div class="comment-avatar">' + (c.user_name||'?').charAt(0) + '</div>'
                 + '<div class="comment-body"><span class="comment-name">' + esc(c.user_name||'') + '</span>'
                 + '<span class="comment-time">' + timeago(c.created_at) + '</span>'
+                + (isMine ? '<button class="comment-del-btn" onclick="deleteComment(' + c.id + ',' + t.id + ')" title="删除">&#x1F5D1;</button>' : '')
                 + '<div class="comment-text">' + esc(c.content).replace(/\n/g,'<br>') + '</div></div></div>';
         });
         h += '<div class="comment-input-wrap"><input type="text" class="form-input" id="new-comment" placeholder="说点什么...">'
@@ -901,6 +903,11 @@ function addComment(tid) {
     var inp = document.getElementById('new-comment');
     if (!inp.value.trim()) return;
     api('/api/tasks/' + tid + '/comments', {content:inp.value.trim()}, function(){ openTaskDetail(tid); });
+}
+function deleteComment(cid, tid) {
+    confirmDialog('删除这条评论?', function() {
+        api('/api/comments/' + cid, {}, function(){ openTaskDetail(tid); }, 'DELETE');
+    });
 }
 function uploadFile(tid, input) {
     if (!input.files.length) return;

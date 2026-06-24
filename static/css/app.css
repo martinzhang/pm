@@ -430,10 +430,16 @@ select.form-input{-webkit-appearance:none;appearance:none;background-image:url("
     background:var(--main);color:#fff;display:flex;align-items:center;
     justify-content:center;font-size:12px;font-weight:600;
 }
-.comment-body{flex:1}
+.comment-body{flex:1;position:relative}
 .comment-name{font-size:12px;font-weight:600;color:var(--text)}
 .comment-time{font-size:11px;color:var(--text3);margin-left:6px}
 .comment-text{font-size:14px;color:var(--text2);margin-top:2px;line-height:1.6}
+.comment-del-btn{
+    float:right;background:none;border:none;cursor:pointer;
+    font-size:14px;color:var(--text3);padding:0 2px;line-height:1;
+    opacity:0.5;transition:opacity .15s;
+}
+.comment-del-btn:hover{opacity:1;color:var(--danger)}
 .comment-input-wrap{display:flex;gap:8px;margin-top:12px}
 .comment-input-wrap input{flex:1}
 
