@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <title>奈娃咖啡项目管理</title>
-<link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}?v={{ static_v }}">
 </head>
 <body>
 
@@ -176,7 +176,7 @@ var PRIORITIES = {{ priorities|tojson }};
 var PROJECT_STATUS = {{ project_status|tojson }};
 </script>
 <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
-<script src="{{ url_for('static', filename='js/app.js') }}"></script>
+<script src="{{ url_for('static', filename='js/app.js') }}?v={{ static_v }}"></script>
 
 </body>
 </html>

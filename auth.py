@@ -74,6 +74,16 @@ def load_user():
         pass
 
 
+def _static_version():
+    base = os.path.dirname(os.path.abspath(__file__))
+    paths = [
+        os.path.join(base, "static", "css", "app.css"),
+        os.path.join(base, "static", "js", "app.js"),
+    ]
+    ts = max((int(os.path.getmtime(p)) for p in paths if os.path.exists(p)), default=0)
+    return ts
+
+
 def inject_globals():
     """context_processor: inject template globals."""
     return {
@@ -84,6 +94,7 @@ def inject_globals():
         "project_colors": PROJECT_COLORS,
         "priorities": PRIORITIES,
         "project_status": PROJECT_STATUS,
+        "static_v": _static_version(),
     }
 
 
