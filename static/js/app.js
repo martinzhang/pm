@@ -200,6 +200,16 @@ function openModal(html) {
 function closeModal() {
     document.getElementById('modal-overlay').classList.add('hidden');
 }
+// Modal dismisses only via the ✕ button or Esc — never by clicking the
+// backdrop. This prevents accidentally closing a form and losing half-typed
+// content when a click/drag lands on the dim area.
+(function setupModalDismiss(){
+    var overlay = document.getElementById('modal-overlay');
+    if (!overlay) return;
+    document.addEventListener('keydown', function(e){
+        if (e.key === 'Escape' && !overlay.classList.contains('hidden')) closeModal();
+    });
+})();
 
 // ── In-page confirm dialog (replacement for native confirm) ──
 function confirmDialog(msg, onOk) {

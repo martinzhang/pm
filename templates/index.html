@@ -95,9 +95,12 @@
 <div id="alert-backdrop" class="modal-overlay hidden" onclick="toggleAlerts()" style="background:transparent;backdrop-filter:none"></div>
 
 <!-- Modal (reusable) -->
-<div id="modal-overlay" class="modal-overlay hidden" onclick="closeModal()">
-    <div class="modal-sheet" onclick="event.stopPropagation()">
+<div id="modal-overlay" class="modal-overlay hidden">
+    <div class="modal-sheet">
         <div class="modal-handle"></div>
+        <button class="modal-close" onclick="closeModal()" aria-label="关闭">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg>
+        </button>
         <div id="modal-content"></div>
     </div>
 </div>

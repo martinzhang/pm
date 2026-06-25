@@ -310,13 +310,23 @@ select.form-input{-webkit-appearance:none;appearance:none;background-image:url("
     padding:0 20px 20px;
     animation:slideUp 0.3s cubic-bezier(.34,1.56,.64,1);
     -webkit-overflow-scrolling:touch;
+    position:relative;
 }
+.modal-close{
+    position:absolute;top:12px;right:12px;z-index:2;
+    width:34px;height:34px;border:none;border-radius:50%;
+    display:flex;align-items:center;justify-content:center;
+    background:rgba(149,163,179,0.1);color:var(--text2);
+    cursor:pointer;transition:background .15s;
+}
+.modal-close:hover{background:rgba(149,163,179,0.2)}
+.modal-close:active{background:rgba(149,163,179,0.28)}
 @keyframes slideUp{from{transform:translateY(100%);opacity:0.5}to{transform:translateY(0);opacity:1}}
 .modal-handle{
     width:36px;height:5px;background:var(--border);border-radius:3px;
     margin:10px auto 16px;
 }
-.modal-title{font-size:18px;font-weight:700;color:var(--text);margin-bottom:16px}
+.modal-title{font-size:18px;font-weight:700;color:var(--text);margin-bottom:16px;padding-right:40px}
 
 /* ── Alert Panel ── */
 .alert-panel{
