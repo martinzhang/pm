@@ -105,6 +105,10 @@ def api_list_projects():
             p["visible_to"] = json.loads(p["visible_to"]) if p.get("visible_to") else []
         except (json.JSONDecodeError, TypeError):
             p["visible_to"] = []
+        try:
+            p["phases"] = json.loads(p["phases"]) if p.get("phases") else []
+        except (json.JSONDecodeError, TypeError):
+            p["phases"] = []
         projects.append(p)
     conn.close()
     return jsonify(projects)
@@ -164,6 +168,10 @@ def api_get_project(pid):
         p["visible_to"] = json.loads(p["visible_to"]) if p.get("visible_to") else []
     except (json.JSONDecodeError, TypeError):
         p["visible_to"] = []
+    try:
+        p["phases"] = json.loads(p["phases"]) if p.get("phases") else []
+    except (json.JSONDecodeError, TypeError):
+        p["phases"] = []
     conn.close()
     return jsonify(p)
 
@@ -184,6 +192,10 @@ def api_update_project(pid):
         fields.append("visible_to=?")
         vt = data["visible_to"]
         vals.append(json.dumps(vt) if vt else "")
+    if "phases" in data:
+        fields.append("phases=?")
+        ph = data["phases"]
+        vals.append(json.dumps(ph) if ph else "")
     if not fields:
         conn.close()
         return jsonify({"error": "无更新"}), 400

@@ -4,6 +4,86 @@ var USERS = [];
 var currentProject = null;
 var calYear, calMonth;
 
+// ── Project-level phase override ──
+// Default (built-in) phases can only be enabled/disabled per project.
+// Custom phases (project-specific) support full add/edit/delete/enable/disable.
+// The two coexist: final list = enabled built-ins (default order) + enabled customs.
+// Snapshot of the global defaults, captured once below.
+var _BASE_PHASES = null;
+var _BASE_PHASE_MAP = null;
+var _BASE_PHASE_COLORS = null;
+// Pre-defined color palette for custom phases (cycles if more than 8)
+var _CUSTOM_PHASE_PALETTE = ["#C89D9F","#D4A574","#A594C4","#82B89C","#D4956A","#7CB5B3","#8BA3C7","#95A3B3"];
+
+// Parse stored project.phases (new object form, or legacy array) into a normal shape.
+function _normalizePhases(phases) {
+    if (!phases) return { disabledBuiltins: [], custom: [] };
+    if (Array.isArray(phases)) {
+        // Legacy format: a flat array of customs that used to replace the defaults.
+        return {
+            disabledBuiltins: [],
+            custom: phases.map(function(p){ return { key: p.key, label: p.label || p.key, enabled: p.enabled !== false }; }),
+        };
+    }
+    return {
+        disabledBuiltins: (phases.disabled_builtins || []).slice(),
+        custom: (phases.custom || []).map(function(p){ return { key: p.key, label: p.label || p.key, enabled: p.enabled !== false }; }),
+    };
+}
+
+function _applyProjectPhases(phases, tasks) {
+    if (!_BASE_PHASES) {
+        _BASE_PHASES = PHASES.slice();
+        _BASE_PHASE_MAP = Object.assign({}, PHASE_MAP);
+        _BASE_PHASE_COLORS = Object.assign({}, PHASE_COLORS);
+    }
+    var norm = _normalizePhases(phases);
+    var disabled = {};
+    norm.disabledBuiltins.forEach(function(k){ disabled[k] = true; });
+
+    // Discover legacy phases: keys used by existing tasks that are neither a built-in
+    // nor a configured custom (e.g. created by the old prompt flow). Treat them as
+    // enabled customs, keyed by their existing value so the tasks stay matched.
+    var allCustom = norm.custom.concat(_discoverLegacyPhases(norm, tasks));
+
+    // Build the active dropdown/legend list (enabled built-ins, then enabled customs).
+    var list = [];
+    _BASE_PHASES.forEach(function(p){ if (!disabled[p[0]]) list.push([p[0], _BASE_PHASE_MAP[p[0]]]); });
+    allCustom.forEach(function(p){ if (p.enabled) list.push([p.key, p.label]); });
+    PHASES = list;
+
+    // Maps include ALL phases (even disabled/custom) so already-tagged tasks still render.
+    var map = {};
+    var colors = {};
+    _BASE_PHASES.forEach(function(p){ map[p[0]] = _BASE_PHASE_MAP[p[0]]; colors[p[0]] = _BASE_PHASE_COLORS[p[0]]; });
+    allCustom.forEach(function(p, i){ map[p.key] = p.label; colors[p.key] = _CUSTOM_PHASE_PALETTE[i % _CUSTOM_PHASE_PALETTE.length]; });
+
+    // Re-wrap with the same fallback behavior as init (orphaned keys → key itself / hash color).
+    if (typeof Proxy !== 'undefined') {
+        try {
+            map = new Proxy(map, { get: function(t, k){ return (k in t) ? t[k] : (k && k !== 'undefined' ? k : ''); } });
+            colors = new Proxy(colors, { get: function(t, k){ return (k in t) ? t[k] : (window._hashPhaseColor ? window._hashPhaseColor(String(k||'')) : '#95A3B3'); } });
+        } catch(e) {}
+    }
+    PHASE_MAP = map;
+    PHASE_COLORS = colors;
+}
+
+// Find phase keys used by tasks but not covered by built-ins or configured customs.
+// Returns [{key,label,enabled}] in first-seen order. _BASE_PHASES must be captured.
+function _discoverLegacyPhases(norm, tasks) {
+    if (!tasks || !tasks.length) return [];
+    var known = {};
+    _BASE_PHASES.forEach(function(p){ known[p[0]] = true; });
+    norm.custom.forEach(function(p){ known[p.key] = true; });
+    var found = [];
+    tasks.forEach(function(t){
+        var k = t && t.phase;
+        if (k && !known[k]) { known[k] = true; found.push({ key: k, label: k, enabled: true }); }
+    });
+    return found;
+}
+
 // ── Custom phase support: wrap PHASE_MAP/PHASE_COLORS with fallbacks ──
 // Unknown phase keys → label = key itself, color = hash-based pastel
 (function(){
@@ -91,7 +171,7 @@ function goBack() {
         var prev = pageStack[pageStack.length - 1];
         showPage(prev);
         if (pageStack.length <= 1) document.getElementById('nav-back').style.display = 'none';
-        if (prev === 'projects') { setTitle('全部项目'); loadProjects(); }
+        if (prev === 'projects') { _applyProjectPhases([]); setTitle('全部项目'); loadProjects(); }
         else if (prev === 'dashboard') { setTitle('<span class="cursor-blink">&gt;_</span>奈娃咖啡项目管理', true); loadDashboard(); }
         else if (prev === 'calendar') setTitle('我的日历');
         else if (prev === 'meetings') { setTitle('会议纪要'); loadMeetings(); }
@@ -290,6 +370,7 @@ function loadProjects() {
 function openProject(pid) {
     api('/api/projects/' + pid, null, function(p) {
         currentProject = p;
+        _applyProjectPhases(p.phases, p.tasks);
         setTitle(p.name);
         pushPage('project');
         renderProjectDetail(p);
@@ -1063,6 +1144,11 @@ function openProjectForm(pid) {
     h += '</div><input type="hidden" id="pf-color" value="' + (p?p.color:'#95A3B3') + '"></div>';
     h += '<div class="form-group"><label class="form-label">可见范围 <span style="color:var(--muted);font-size:12px">(不选则仅创建人与任务相关人可见)</span></label>';
     h += '<div class="vis-tree" id="user-select-container"><div style="color:var(--muted);font-size:13px">加载中...</div></div></div>';
+    if (p) {
+        h += '<div class="form-group" style="margin-top:4px">'
+            + '<button class="btn btn-ghost btn-sm" style="width:100%;justify-content:center;border:1px dashed var(--border);color:var(--text2)" onclick="openPhaseManager(' + p.id + ')">⚙ 阶段管理</button>'
+            + '</div>';
+    }
     h += '<div style="display:flex;gap:8px;margin-top:16px">'
         + '<button class="btn btn-primary btn-block" onclick="saveProject(' + (pid||'null') + ')">保存</button>';
     if (p) h += '<button class="btn btn-danger" onclick="if(confirm(\'确定删除项目?\'))deleteProject(' + p.id + ')">删除项目</button>';
@@ -1099,6 +1185,186 @@ function deleteProject(pid) {
     api('/api/projects/' + pid, {}, function(){ closeModal(); switchTab('projects'); toast('项目已删除'); }, 'DELETE');
 }
 
+// ── Phase Manager (阶段管理) ──
+var _pmPid = null;
+var _pmBuiltins = [];   // [{key,label,enabled}] — built-in defaults: enable/disable only
+var _pmCustom = [];     // [{key,label,enabled}] — project customs: full add/edit/delete/toggle
+var _pmCustomSeq = 0;
+
+function openPhaseManager(pid) {
+    _pmPid = pid;
+    if (currentProject && currentProject.id === pid) {
+        _pmInit(currentProject.phases, currentProject.tasks);
+        _renderPhaseManager();
+    } else {
+        api('/api/projects/' + pid, null, function(p){
+            _pmInit(p.phases, p.tasks);
+            _renderPhaseManager();
+        }, 'GET');
+    }
+}
+
+function _pmInit(phases, tasks) {
+    if (!_BASE_PHASES) _applyProjectPhases(null);  // ensure defaults captured
+    var norm = _normalizePhases(phases);
+    var disabled = {};
+    norm.disabledBuiltins.forEach(function(k){ disabled[k] = true; });
+    _pmBuiltins = _BASE_PHASES.map(function(p){
+        return { key: p[0], label: _BASE_PHASE_MAP[p[0]], enabled: !disabled[p[0]] };
+    });
+    // Surface legacy phases (used by tasks but never configured) as customs, so they
+    // appear in 阶段管理 and get persisted on save.
+    var legacy = _discoverLegacyPhases(norm, tasks);
+    _pmCustom = norm.custom.concat(legacy).map(function(p){ return { key: p.key, label: p.label, enabled: p.enabled }; });
+}
+
+function _pmNewKey() {
+    _pmCustomSeq++;
+    return 'cp_' + Date.now().toString(36) + '_' + _pmCustomSeq;
+}
+
+function _renderPhaseManager() {
+    var h = '<div class="modal-title">阶段管理</div>';
+    h += '<div style="color:var(--text3);font-size:12px;margin-bottom:14px">默认阶段可启用/禁用；自定义阶段可增删改，仅对本项目生效</div>';
+    h += '<div class="form-label" style="margin-bottom:6px">默认阶段</div>';
+    h += '<div id="pm-builtin-list">' + _renderPmBuiltins() + '</div>';
+    h += '<div class="form-label" style="margin:16px 0 6px">自定义阶段</div>';
+    h += '<div id="pm-custom-list">' + _renderPmCustom() + '</div>';
+    h += '<div style="display:flex;gap:8px;margin-top:8px">'
+        + '<input type="text" class="form-input" id="pm-new-key" placeholder="新阶段名称（最多12字）" style="flex:1" maxlength="12" onkeydown="if(event.key===\'Enter\'){event.preventDefault();pmAddPhase();}">'
+        + '<button class="btn btn-primary" style="white-space:nowrap" onclick="pmAddPhase()">+ 新增</button>'
+        + '</div>';
+    h += '<div style="display:flex;gap:8px;margin-top:18px">'
+        + '<button class="btn btn-primary btn-block" onclick="pmSave()">保存</button>'
+        + '<button class="btn btn-ghost" style="white-space:nowrap" onclick="pmReset()">全部重置</button>'
+        + '</div>';
+    openModal(h);
+}
+
+function _renderPmBuiltins() {
+    var s = '<div style="display:flex;flex-direction:column;gap:6px">';
+    _pmBuiltins.forEach(function(p, i){
+        var dimmed = p.enabled ? '' : 'opacity:0.4;';
+        s += '<div style="display:flex;align-items:center;gap:8px;padding:7px 10px;background:var(--card-bg,#fff);border:1px solid var(--border);border-radius:8px;' + dimmed + '">'
+            + '<span style="width:8px;height:8px;border-radius:50%;background:' + (_BASE_PHASE_COLORS[p.key]||'#95A3B3') + ';flex-shrink:0"></span>'
+            + '<span style="flex:1;font-size:13px">' + esc(p.label) + '</span>'
+            + '<button class="btn btn-ghost btn-sm" style="padding:2px 10px;font-size:12px" onclick="pmToggleBuiltin(' + i + ')">' + (p.enabled ? '禁用' : '启用') + '</button>'
+            + '</div>';
+    });
+    s += '</div>';
+    return s;
+}
+
+function _renderPmCustom() {
+    if (!_pmCustom.length) {
+        return '<div style="color:var(--text3);font-size:13px;padding:4px 0 2px">暂无自定义阶段</div>';
+    }
+    var s = '<div style="display:flex;flex-direction:column;gap:6px">';
+    _pmCustom.forEach(function(p, i){
+        var dot = _CUSTOM_PHASE_PALETTE[i % _CUSTOM_PHASE_PALETTE.length];
+        var dimmed = p.enabled ? '' : 'opacity:0.4;';
+        s += '<div style="display:flex;align-items:center;gap:6px;padding:7px 10px;background:var(--card-bg,#fff);border:1px solid var(--border);border-radius:8px;' + dimmed + '">'
+            + '<span style="width:8px;height:8px;border-radius:50%;background:' + dot + ';flex-shrink:0"></span>'
+            + '<input type="text" class="form-input pm-custom-label" data-idx="' + i + '" value="' + esc(p.label) + '" maxlength="12" style="flex:1;font-size:13px;padding:4px 8px;height:auto" onchange="pmEditLabel(' + i + ',this.value)">'
+            + (i > 0 ? '<button class="btn btn-ghost btn-sm" style="padding:2px 6px;font-size:15px;line-height:1" onclick="pmMove(' + i + ',-1)" title="上移">↑</button>' : '<span style="width:26px"></span>')
+            + (i < _pmCustom.length-1 ? '<button class="btn btn-ghost btn-sm" style="padding:2px 6px;font-size:15px;line-height:1" onclick="pmMove(' + i + ',1)" title="下移">↓</button>' : '<span style="width:26px"></span>')
+            + '<button class="btn btn-ghost btn-sm" style="padding:2px 8px;font-size:12px" onclick="pmToggleCustom(' + i + ')">' + (p.enabled ? '禁用' : '启用') + '</button>'
+            + '<button class="btn btn-ghost btn-sm" style="padding:2px 8px;font-size:12px;color:var(--danger,#E85D5D)" onclick="pmDelete(' + i + ')">删除</button>'
+            + '</div>';
+    });
+    s += '</div>';
+    return s;
+}
+
+// Read label inputs back into the model before any re-render or save (in case onchange didn't fire).
+function _pmSyncLabels() {
+    document.querySelectorAll('.pm-custom-label').forEach(function(inp){
+        var idx = parseInt(inp.getAttribute('data-idx'));
+        if (!isNaN(idx) && _pmCustom[idx]) _pmCustom[idx].label = inp.value;
+    });
+}
+function _pmRefreshBuiltins() {
+    var el = document.getElementById('pm-builtin-list');
+    if (el) el.innerHTML = _renderPmBuiltins();
+}
+function _pmRefreshCustom() {
+    var el = document.getElementById('pm-custom-list');
+    if (el) el.innerHTML = _renderPmCustom();
+}
+
+function pmToggleBuiltin(idx) {
+    _pmBuiltins[idx].enabled = !_pmBuiltins[idx].enabled;
+    _pmRefreshBuiltins();
+}
+
+function pmAddPhase() {
+    var inp = document.getElementById('pm-new-key');
+    var label = (inp ? inp.value : '').trim();
+    if (!label) return;
+    if (label.length > 12) label = label.slice(0, 12);
+    _pmSyncLabels();
+    _pmCustom.push({ key: _pmNewKey(), label: label, enabled: true });
+    if (inp) inp.value = '';
+    _pmRefreshCustom();
+}
+
+function pmEditLabel(idx, val) {
+    if (_pmCustom[idx]) _pmCustom[idx].label = (val || '').slice(0, 12);
+}
+
+function pmMove(idx, dir) {
+    _pmSyncLabels();
+    var to = idx + dir;
+    if (to < 0 || to >= _pmCustom.length) return;
+    var tmp = _pmCustom[idx]; _pmCustom[idx] = _pmCustom[to]; _pmCustom[to] = tmp;
+    _pmRefreshCustom();
+}
+
+function pmToggleCustom(idx) {
+    _pmSyncLabels();
+    _pmCustom[idx].enabled = !_pmCustom[idx].enabled;
+    _pmRefreshCustom();
+}
+
+function pmDelete(idx) {
+    _pmSyncLabels();
+    var ph = _pmCustom[idx];
+    if (ph && currentProject && currentProject.id === _pmPid) {
+        var used = (currentProject.tasks || []).filter(function(t){ return t.phase === ph.key; }).length;
+        if (used > 0 && !confirm('有 ' + used + ' 个任务正在使用「' + (ph.label || ph.key) + '」，删除后这些任务将失去阶段标签。确定删除？')) return;
+    }
+    _pmCustom.splice(idx, 1);
+    _pmRefreshCustom();
+}
+
+function pmReset() {
+    if (!confirm('重置为全局默认：启用所有默认阶段并删除全部自定义阶段？')) return;
+    _pmBuiltins.forEach(function(b){ b.enabled = true; });
+    _pmCustom = [];
+    _pmRefreshBuiltins();
+    _pmRefreshCustom();
+}
+
+function pmSave() {
+    _pmSyncLabels();
+    var payload = {
+        disabled_builtins: _pmBuiltins.filter(function(b){ return !b.enabled; }).map(function(b){ return b.key; }),
+        custom: _pmCustom.map(function(c){
+            var label = (c.label || '').trim();
+            return { key: c.key, label: label || c.key, enabled: c.enabled };
+        }),
+    };
+    api('/api/projects/' + _pmPid, { phases: payload }, function(){
+        if (currentProject && currentProject.id === _pmPid) {
+            currentProject.phases = payload;
+            _applyProjectPhases(payload);
+        }
+        closeModal();
+        toast('阶段已保存');
+        reloadProject();
+    }, 'PUT');
+}
+
 function openTaskForm(tid) {
     var t = null;
     if (tid && currentProject) {
@@ -1117,10 +1383,12 @@ function openTaskForm(tid) {
     var _phaseKeys = PHASES.map(function(p){ return p[0]; });
     var _curPhase = t && t.phase ? t.phase : '';
     if (_curPhase && _phaseKeys.indexOf(_curPhase) < 0) {
-        h += '<option value="' + esc(_curPhase) + '" selected>' + esc(_curPhase) + ' (自定义)</option>';
+        h += '<option value="' + esc(_curPhase) + '" selected>' + esc(PHASE_MAP[_curPhase] || _curPhase) + ' (已禁用)</option>';
     }
     PHASES.forEach(function(p){ h += '<option value="' + p[0] + '" ' + (t&&t.phase===p[0]?'selected':'') +'>' + p[1] + '</option>'; });
-    h += '<option value="__custom__" style="font-style:italic;color:var(--accent,#C89D9F)">+ 自定义阶段…</option>';
+    if (currentProject) {
+        h += '<option value="__manage__" style="font-style:italic;color:var(--accent,#C89D9F)">⚙ 阶段管理…</option>';
+    }
     h += '</select></div><div class="form-group"><label class="form-label">优先级</label><select class="form-input" id="tf-priority">';
     PRIORITIES.forEach(function(p){ h += '<option value="' + p[0] + '" ' + (t&&t.priority===p[0]?'selected':'') + '>' + p[1] + '</option>'; });
     h += '</select></div></div>';
@@ -1156,7 +1424,7 @@ function saveTask(tid) {
         end_date: document.getElementById('tf-end').value,
         start_time: (document.getElementById('tf-start-time')||{}).value || '',
         end_time: (document.getElementById('tf-end-time')||{}).value || '',
-        phase: (function(){ var v = document.getElementById('tf-phase').value; return v === '__custom__' ? 'concept' : v; })(),
+        phase: (function(){ var v = document.getElementById('tf-phase').value; return (v === '__custom__' || v === '__manage__') ? (PHASES[0] ? PHASES[0][0] : 'concept') : v; })(),
         priority: document.getElementById('tf-priority').value,
         assignee_id: assigneeId,
         assignee_name: assigneeName,
@@ -1174,27 +1442,13 @@ function saveTask(tid) {
 
 // ── Custom phase handler ──
 function onPhaseSelectChange(sel) {
-    if (sel.value !== '__custom__') return;
     var prev = sel.getAttribute('data-prev') || (sel.options.length > 1 ? sel.options[0].value : '');
-    var name = (window.prompt('输入自定义阶段名称（最多 12 字）：', '') || '').trim();
-    if (!name) { sel.value = prev; return; }
-    if (name.length > 12) name = name.slice(0, 12);
-    if (name === '__custom__') { sel.value = prev; return; }
-    // If already exists as option, just select it
-    for (var i = 0; i < sel.options.length; i++) {
-        if (sel.options[i].value === name) { sel.value = name; sel.setAttribute('data-prev', name); return; }
+    if (sel.value === '__manage__') {
+        sel.value = prev;
+        if (currentProject) { closeModal(); openPhaseManager(currentProject.id); }
+        return;
     }
-    // Insert new option before the __custom__ entry
-    var opt = document.createElement('option');
-    opt.value = name;
-    opt.textContent = name + ' (自定义)';
-    var customOpt = null;
-    for (var j = 0; j < sel.options.length; j++) {
-        if (sel.options[j].value === '__custom__') { customOpt = sel.options[j]; break; }
-    }
-    if (customOpt) sel.insertBefore(opt, customOpt); else sel.appendChild(opt);
-    sel.value = name;
-    sel.setAttribute('data-prev', name);
+    sel.setAttribute('data-prev', sel.value);
 }
 
 // ── Apple-style assignee chip picker ──

@@ -220,3 +220,14 @@ def run_migrations():
         c.close()
     except Exception:
         pass
+
+    # Migrate: add phases column to projects (JSON array of {key, enabled})
+    try:
+        c = get_db()
+        cols = [r[1] for r in c.execute("PRAGMA table_info(projects)").fetchall()]
+        if "phases" not in cols:
+            c.execute("ALTER TABLE projects ADD COLUMN phases TEXT DEFAULT ''")
+            c.commit()
+        c.close()
+    except Exception:
+        pass
