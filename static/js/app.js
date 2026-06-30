@@ -399,7 +399,7 @@ function renderProjectDetail(p) {
     html += '<div class="card" style="border-left:4px solid ' + (p.color||'#95A3B3') + ';cursor:default">'
         + '<div class="flex-between"><div class="project-name">' + esc(p.name) + '</div>'
         + '<button class="btn btn-sm btn-ghost" onclick="openProjectForm(' + p.id + ')">编辑</button></div>'
-        + (p.description ? '<div class="text-muted mt-8">' + esc(p.description) + '</div>' : '')
+        + (p.description ? '<div class="text-muted mt-8">' + esc(p.description).replace(/\n/g, '<br>') + '</div>' : '')
         + '<div class="progress-bar mt-8"><div class="progress-fill" style="width:' + p.avg_progress + '%;background:' + (p.color||'var(--main)') + '"></div></div>'
         + '<div class="project-meta mt-8"><span>总进度 ' + p.avg_progress + '%</span><span>'
         + p.task_done + '/' + p.task_total + ' 完成</span>'
