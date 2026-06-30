@@ -237,6 +237,58 @@ def api_delete_project(pid):
     return jsonify({"success": True})
 
 
+# ── Duplicate Project ──
+@bp.route("/api/projects/<int:pid>/duplicate", methods=["POST"])
+def api_duplicate_project(pid):
+    conn = get_db()
+    if not get_project_access(conn, pid, g.user):
+        conn.close()
+        return jsonify({"error": "无权访问此项目"}), 403
+    row = conn.execute("SELECT * FROM projects WHERE id=?", (pid,)).fetchone()
+    if not row:
+        conn.close()
+        return jsonify({"error": "项目不存在"}), 404
+    now = datetime.now(timezone.utc).isoformat()
+    p = dict(row)
+    cur = conn.execute(
+        "INSERT INTO projects (name,description,status,color,owner_id,owner_name,start_date,deadline,visible_to,phases,created_at,updated_at) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+        ("副本 - " + p["name"], p["description"], "active", p["color"],
+         g.user["id"], g.user["name"], p["start_date"], p["deadline"],
+         p["visible_to"] or "", p["phases"] or "", now, now),
+    )
+    new_pid = cur.lastrowid
+    tasks = [dict(t) for t in conn.execute("SELECT * FROM tasks WHERE project_id=?", (pid,)).fetchall()]
+    old_to_new = {}
+    for t in tasks:
+        tc = conn.execute(
+            "INSERT INTO tasks (project_id,name,description,assignee_id,assignee_name,phase,priority,"
+            "start_date,end_date,progress,sort_order,depends_on,created_at,updated_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (new_pid, t["name"], t["description"], t["assignee_id"], t["assignee_name"],
+             t["phase"], t["priority"], t["start_date"], t["end_date"],
+             t["progress"], t["sort_order"], "", now, now),
+        )
+        old_to_new[t["id"]] = tc.lastrowid
+    # remap depends_on using original task's value
+    for t in tasks:
+        old_dep = (t.get("depends_on") or "").strip()
+        if old_dep:
+            new_deps = ",".join(str(old_to_new.get(int(x), x)) for x in old_dep.split(",") if x.strip())
+            conn.execute("UPDATE tasks SET depends_on=? WHERE id=?", (new_deps, old_to_new[t["id"]]))
+    # copy subtasks
+    for old_tid, new_tid in old_to_new.items():
+        subs = conn.execute("SELECT * FROM subtasks WHERE task_id=?", (old_tid,)).fetchall()
+        for s in subs:
+            conn.execute(
+                "INSERT INTO subtasks (task_id,content,is_done,created_at) VALUES (?,?,?,?)",
+                (new_tid, s["content"], s["is_done"], now),
+            )
+    conn.commit()
+    conn.close()
+    return jsonify({"success": True, "id": new_pid})
+
+
 # ── Project Files ──
 @bp.route("/api/projects/<int:pid>/files", methods=["POST"])
 def api_upload_project_file(pid):

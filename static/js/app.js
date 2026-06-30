@@ -14,6 +14,13 @@ var _BASE_PHASE_MAP = null;
 var _BASE_PHASE_COLORS = null;
 // Pre-defined color palette for custom phases (cycles if more than 8)
 var _CUSTOM_PHASE_PALETTE = ["#C89D9F","#D4A574","#A594C4","#82B89C","#D4956A","#7CB5B3","#8BA3C7","#95A3B3"];
+// Full color swatch panel shown in phase manager (莫兰迪 + 明快 两组)
+var _PM_SWATCHES = [
+    // 莫兰迪
+    "#C89D9F","#D4A574","#A594C4","#82B89C","#D4956A","#7CB5B3","#8BA3C7","#95A3B3",
+    // 明快
+    "#E8746A","#4FA8D8","#5BBD72","#F0B429","#9B6DD4","#2BBFB0","#E8709A","#4472C4",
+];
 
 // Parse stored project.phases (new object form, or legacy array) into a normal shape.
 function _normalizePhases(phases) {
@@ -27,7 +34,7 @@ function _normalizePhases(phases) {
     }
     return {
         disabledBuiltins: (phases.disabled_builtins || []).slice(),
-        custom: (phases.custom || []).map(function(p){ return { key: p.key, label: p.label || p.key, enabled: p.enabled !== false }; }),
+        custom: (phases.custom || []).map(function(p){ return { key: p.key, label: p.label || p.key, enabled: p.enabled !== false, color: p.color || '' }; }),
     };
 }
 
@@ -56,7 +63,10 @@ function _applyProjectPhases(phases, tasks) {
     var map = {};
     var colors = {};
     _BASE_PHASES.forEach(function(p){ map[p[0]] = _BASE_PHASE_MAP[p[0]]; colors[p[0]] = _BASE_PHASE_COLORS[p[0]]; });
-    allCustom.forEach(function(p, i){ map[p.key] = p.label; colors[p.key] = _CUSTOM_PHASE_PALETTE[i % _CUSTOM_PHASE_PALETTE.length]; });
+    allCustom.forEach(function(p, i){
+        map[p.key] = p.label;
+        colors[p.key] = p.color || _CUSTOM_PHASE_PALETTE[i % _CUSTOM_PHASE_PALETTE.length];
+    });
 
     // Re-wrap with the same fallback behavior as init (orphaned keys → key itself / hash color).
     if (typeof Proxy !== 'undefined') {
@@ -1161,7 +1171,8 @@ function openProjectForm(pid) {
     }
     h += '<div style="display:flex;gap:8px;margin-top:16px">'
         + '<button class="btn btn-primary btn-block" onclick="saveProject(' + (pid||'null') + ')">保存</button>';
-    if (p) h += '<button class="btn btn-danger" onclick="if(confirm(\'确定删除项目?\'))deleteProject(' + p.id + ')">删除项目</button>';
+    if (p) h += '<button class="btn btn-danger" onclick="if(confirm(\'确定删除项目?\'))deleteProject(' + p.id + ')">删除项目</button>'
+        + '<button class="btn btn-ghost" onclick="duplicateProject(' + p.id + ')" title="复制项目">复制</button>';
     h += '</div>';
     openModal(h);
     loadOrgForVis(function(org) {
@@ -1194,6 +1205,10 @@ function saveProject(pid) {
 function deleteProject(pid) {
     api('/api/projects/' + pid, {}, function(){ closeModal(); switchTab('projects'); toast('项目已删除'); }, 'DELETE');
 }
+function duplicateProject(pid) {
+    if (!confirm('复制项目？将复制所有任务、时间、负责人（不含附件和评论）。')) return;
+    api('/api/projects/' + pid + '/duplicate', {}, function(d){ closeModal(); openProject(d.id); toast('项目已复制'); });
+}
 
 // ── Phase Manager (阶段管理) ──
 var _pmPid = null;
@@ -1225,7 +1240,7 @@ function _pmInit(phases, tasks) {
     // Surface legacy phases (used by tasks but never configured) as customs, so they
     // appear in 阶段管理 and get persisted on save.
     var legacy = _discoverLegacyPhases(norm, tasks);
-    _pmCustom = norm.custom.concat(legacy).map(function(p){ return { key: p.key, label: p.label, enabled: p.enabled }; });
+    _pmCustom = norm.custom.concat(legacy).map(function(p){ return { key: p.key, label: p.label, enabled: p.enabled, color: p.color || '' }; });
 }
 
 function _pmNewKey() {
@@ -1269,17 +1284,30 @@ function _renderPmCustom() {
     if (!_pmCustom.length) {
         return '<div style="color:var(--text3);font-size:13px;padding:4px 0 2px">暂无自定义阶段</div>';
     }
+    var swatchHtml = '<div style="display:flex;flex-wrap:wrap;gap:5px;padding:8px 0 4px">';
+    _PM_SWATCHES.forEach(function(c){
+        swatchHtml += '<span onclick="_pmPickSwatch(this,\'' + c + '\')" style="display:inline-block;width:20px;height:20px;border-radius:50%;background:' + c + ';cursor:pointer;flex-shrink:0;border:2px solid transparent" title="' + c + '"></span>';
+    });
+    swatchHtml += '<label title="自定义颜色…" style="display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;border:2px dashed var(--border);cursor:pointer;flex-shrink:0;font-size:12px;color:var(--text3);position:relative;overflow:hidden">'
+        + '…<input type="color" class="pm-free-color" style="position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%;border:none;padding:0" onchange="_pmPickSwatch(this,this.value)">'
+        + '</label></div>';
+
     var s = '<div style="display:flex;flex-direction:column;gap:6px">';
     _pmCustom.forEach(function(p, i){
-        var dot = _CUSTOM_PHASE_PALETTE[i % _CUSTOM_PHASE_PALETTE.length];
+        var color = p.color || _CUSTOM_PHASE_PALETTE[i % _CUSTOM_PHASE_PALETTE.length];
         var dimmed = p.enabled ? '' : 'opacity:0.4;';
-        s += '<div style="display:flex;align-items:center;gap:6px;padding:7px 10px;background:var(--card-bg,#fff);border:1px solid var(--border);border-radius:8px;' + dimmed + '">'
-            + '<span style="width:8px;height:8px;border-radius:50%;background:' + dot + ';flex-shrink:0"></span>'
+        s += '<div style="display:flex;flex-direction:column;gap:0;background:var(--card-bg,#fff);border:1px solid var(--border);border-radius:8px;overflow:hidden;' + dimmed + '">'
+            + '<div style="display:flex;align-items:center;gap:6px;padding:7px 10px">'
+            + '<span class="pm-swatch" data-idx="' + i + '" onclick="pmToggleSwatch(' + i + ')" title="点击选色" style="width:20px;height:20px;border-radius:50%;background:' + color + ';flex-shrink:0;cursor:pointer;border:2px solid transparent"></span>'
             + '<input type="text" class="form-input pm-custom-label" data-idx="' + i + '" value="' + esc(p.label) + '" maxlength="12" style="flex:1;font-size:13px;padding:4px 8px;height:auto" onchange="pmEditLabel(' + i + ',this.value)">'
             + (i > 0 ? '<button class="btn btn-ghost btn-sm" style="padding:2px 6px;font-size:15px;line-height:1" onclick="pmMove(' + i + ',-1)" title="上移">↑</button>' : '<span style="width:26px"></span>')
             + (i < _pmCustom.length-1 ? '<button class="btn btn-ghost btn-sm" style="padding:2px 6px;font-size:15px;line-height:1" onclick="pmMove(' + i + ',1)" title="下移">↓</button>' : '<span style="width:26px"></span>')
             + '<button class="btn btn-ghost btn-sm" style="padding:2px 8px;font-size:12px" onclick="pmToggleCustom(' + i + ')">' + (p.enabled ? '禁用' : '启用') + '</button>'
             + '<button class="btn btn-ghost btn-sm" style="padding:2px 8px;font-size:12px;color:var(--danger,#E85D5D)" onclick="pmDelete(' + i + ')">删除</button>'
+            + '</div>'
+            + '<div class="pm-swatch-panel" id="pm-swp-' + i + '" data-idx="' + i + '" style="display:none;padding:0 10px 8px;border-top:1px solid var(--border)">'
+            + swatchHtml
+            + '</div>'
             + '</div>';
     });
     s += '</div>';
@@ -1313,13 +1341,56 @@ function pmAddPhase() {
     if (!label) return;
     if (label.length > 12) label = label.slice(0, 12);
     _pmSyncLabels();
-    _pmCustom.push({ key: _pmNewKey(), label: label, enabled: true });
+    var autoColor = _CUSTOM_PHASE_PALETTE[_pmCustom.length % _CUSTOM_PHASE_PALETTE.length];
+    _pmCustom.push({ key: _pmNewKey(), label: label, enabled: true, color: autoColor });
     if (inp) inp.value = '';
     _pmRefreshCustom();
 }
 
 function pmEditLabel(idx, val) {
     if (_pmCustom[idx]) _pmCustom[idx].label = (val || '').slice(0, 12);
+}
+function pmEditColor(idx, val) {
+    _pmSyncLabels();
+    if (_pmCustom[idx]) {
+        _pmCustom[idx].color = val;
+        var swatch = document.querySelector('.pm-swatch[data-idx="' + idx + '"]');
+        if (swatch) swatch.style.background = val;
+    }
+}
+function pmToggleSwatch(idx) {
+    _pmSyncLabels();
+    var panel = document.getElementById('pm-swp-' + idx);
+    if (!panel) return;
+    var open = panel.style.display !== 'none';
+    // close all panels first
+    document.querySelectorAll('.pm-swatch-panel').forEach(function(el){ el.style.display = 'none'; });
+    document.querySelectorAll('.pm-swatch').forEach(function(el){ el.style.border = '2px solid transparent'; });
+    if (!open) {
+        panel.style.display = 'block';
+        var sw = document.querySelector('.pm-swatch[data-idx="' + idx + '"]');
+        if (sw) sw.style.border = '2px solid var(--main,#95A3B3)';
+        // mark current color in panel
+        var cur = (_pmCustom[idx] && _pmCustom[idx].color) || '';
+        panel.querySelectorAll('span[title]').forEach(function(el){
+            el.style.border = el.getAttribute('title') === cur ? '2px solid #333' : '2px solid transparent';
+        });
+        panel.setAttribute('data-active-idx', idx);
+    }
+}
+function _pmPickSwatch(el, color) {
+    var panel = el.closest('.pm-swatch-panel');
+    if (!panel) return;
+    var idx = parseInt(panel.getAttribute('data-active-idx'));
+    if (isNaN(idx)) return;
+    pmEditColor(idx, color);
+    // update border highlight
+    panel.querySelectorAll('span[title]').forEach(function(s){ s.style.border = '2px solid transparent'; });
+    if (el.tagName === 'SPAN') el.style.border = '2px solid #333';
+    // close panel
+    panel.style.display = 'none';
+    var sw = document.querySelector('.pm-swatch[data-idx="' + idx + '"]');
+    if (sw) sw.style.border = '2px solid transparent';
 }
 
 function pmMove(idx, dir) {
@@ -1361,7 +1432,7 @@ function pmSave() {
         disabled_builtins: _pmBuiltins.filter(function(b){ return !b.enabled; }).map(function(b){ return b.key; }),
         custom: _pmCustom.map(function(c){
             var label = (c.label || '').trim();
-            return { key: c.key, label: label || c.key, enabled: c.enabled };
+            return { key: c.key, label: label || c.key, enabled: c.enabled, color: c.color || '' };
         }),
     };
     api('/api/projects/' + _pmPid, { phases: payload }, function(){
