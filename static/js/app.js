@@ -2942,13 +2942,13 @@ function openMeetingImport() {
             + '<div class="form-group">'
             + '<label class="form-label" style="display:flex;align-items:center;justify-content:space-between">'
             + '<span>会议内容</span>'
-            + '<button type="button" class="mt-upload-btn" id="mt-upload-btn" title="从文件导入（仅支持 .md .txt .csv）" onclick="document.getElementById(\'mt-file\').click()">'
+            + '<button type="button" class="mt-upload-btn" id="mt-upload-btn" title="从文件导入（.md .txt .csv .docx .pdf）" onclick="document.getElementById(\'mt-file\').click()">'
             + '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>'
             + '<span class="mt-upload-label">导入文件</span>'
             + '</button>'
-            + '<input type="file" id="mt-file" accept=".md,.txt,.csv" style="display:none" onchange="handleMeetingFile(this)">'
+            + '<input type="file" id="mt-file" accept=".md,.txt,.csv,.docx,.pdf" style="display:none" onchange="handleMeetingFile(this)">'
             + '</label>'
-            + '<textarea class="form-input" id="mt-content" rows="10" placeholder="粘贴会议纪要文字内容，或点右上角「导入文件」上传 .md / .txt / .csv"></textarea>'
+            + '<textarea class="form-input" id="mt-content" rows="10" placeholder="粘贴会议纪要文字内容，或点右上角「导入文件」上传 .md / .txt / .csv / Word / PDF"></textarea>'
             + '<div id="mt-file-info" style="font-size:12px;color:var(--text3);margin-top:6px;display:none"></div>'
             + '</div>'
             + '<div class="form-group"><label class="form-label">关联项目 <span style="color:var(--text3);font-size:12px">(可选)</span></label>'
@@ -2987,11 +2987,11 @@ function submitMeeting() {
 function handleMeetingFile(input) {
     var file = input.files && input.files[0];
     if (!file) return;
-    var allowed = ['.md', '.txt', '.csv'];
+    var allowed = ['.md', '.txt', '.csv', '.docx', '.pdf'];
     var name = file.name || '';
     var ext = name.slice(name.lastIndexOf('.')).toLowerCase();
     if (allowed.indexOf(ext) < 0) {
-        toast('仅支持 .md .txt .csv', true);
+        toast('仅支持 .md .txt .csv .docx .pdf', true);
         input.value = '';
         return;
     }

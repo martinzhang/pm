@@ -40,7 +40,7 @@ MINIMAX_API_KEY = os.environ.get(
     "sk-cp-JY_0qjYL8Y8qebUixGtghTwToFERGsd9o3S8O9CiGBaBqs0UnxV-2HRHkOAvllOJ_b0RORGRdrkGKAu4gY0-f4lL9q6qEkzSdWONwSW90AYzwvlt4exfe8o",
 )
 MINIMAX_BASE = "https://api.minimaxi.com/v1"
-MINIMAX_MODEL = "MiniMax-M2.7"
+MINIMAX_MODEL = "MiniMax-M3"
 PHASE_ORDER = [p[0] for p in PHASES]
 FILE_CONTENT_PER_FILE = 50000
 FILE_CONTENT_TOTAL = 500000

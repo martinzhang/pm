@@ -19,7 +19,7 @@ def _alog(msg):
           file=sys.stderr, flush=True)
 
 # Phase-1 text-based file import: markdown / plain text / csv only
-EXTRACT_ALLOWED_EXT = {".md", ".txt", ".csv"}
+EXTRACT_ALLOWED_EXT = {".md", ".txt", ".csv", ".docx", ".pdf"}
 EXTRACT_MAX_CHARS = 500_000
 
 
@@ -35,21 +35,48 @@ def extract_meeting_file():
     filename = f.filename
     ext = os.path.splitext(filename)[1].lower()
     if ext not in EXTRACT_ALLOWED_EXT:
-        return jsonify({"error": "仅支持 .md .txt .csv 格式"}), 400
+        return jsonify({"error": "仅支持 .md .txt .csv .docx .pdf 格式"}), 400
 
     raw = f.read()
     if not raw:
         return jsonify({"error": "文件为空"}), 400
 
-    text = None
-    for enc in ("utf-8", "utf-8-sig", "gbk", "gb18030"):
+    if ext == ".docx":
         try:
-            text = raw.decode(enc)
-            break
-        except UnicodeDecodeError:
-            continue
-    if text is None:
-        text = raw.decode("utf-8", errors="ignore")
+            import io as _io
+            from docx import Document
+            _doc = Document(_io.BytesIO(raw))
+            _parts = [p.text for p in _doc.paragraphs]
+            for _tbl in _doc.tables:
+                for _r in _tbl.rows:
+                    _parts.append("\t".join(_c.text for _c in _r.cells))
+            text = "\n".join(_parts)
+        except Exception:
+            return jsonify({"error": "Word 解析失败，请确认是 .docx（非旧版 .doc）"}), 400
+    elif ext == ".pdf":
+        try:
+            import io as _io
+            import pdfplumber
+            _pages = []
+            with pdfplumber.open(_io.BytesIO(raw)) as _pdf:
+                for _pg in _pdf.pages:
+                    _pages.append(_pg.extract_text() or "")
+            text = "\n".join(_pages)
+        except Exception:
+            return jsonify({"error": "PDF 解析失败（可能是扫描件图片，需可复制文字的 PDF）"}), 400
+    else:
+        text = None
+        for enc in ("utf-8", "utf-8-sig", "gbk", "gb18030"):
+            try:
+                text = raw.decode(enc)
+                break
+            except UnicodeDecodeError:
+                continue
+        if text is None:
+            text = raw.decode("utf-8", errors="ignore")
+
+    if not (text or "").strip():
+        return jsonify({"error": "未能从文件中提取到文字"}), 400
 
     truncated = False
     if len(text) > EXTRACT_MAX_CHARS:
