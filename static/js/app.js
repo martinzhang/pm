@@ -114,6 +114,7 @@ function _discoverLegacyPhases(norm, tasks) {
 })();
 var ganttZoom = 'week';
 var ganttLabelW = parseInt(localStorage.getItem('ganttLabelW') || '160', 10);
+var ganttGroup = localStorage.getItem('ganttGroup') || 'none'; // 'none' | 'phase' | 'assignee'
 var ORG_DATA = null;
 var USERS_MAP = {};
 
@@ -615,6 +616,30 @@ function quickCompleteTask(tid, progress) {
 }
 
 // ── Gantt ──
+function ganttGroupTasks(tasks) {
+    if (ganttGroup === 'none') return [{ label: null, tasks: tasks }];
+    var map = {}, order = [];
+    tasks.forEach(function(t) {
+        var key, label;
+        if (ganttGroup === 'phase') {
+            key = t.phase || '';
+            label = PHASE_MAP[key] || key || '未分类';
+        } else {
+            key = t.assignee_name || '';
+            label = key || '未分配';
+        }
+        if (!map[key]) { map[key] = { label: label, tasks: [] }; order.push(key); }
+        map[key].tasks.push(t);
+    });
+    return order.map(function(k) { return map[k]; });
+}
+
+function setGanttGroup(v) {
+    ganttGroup = v;
+    localStorage.setItem('ganttGroup', v);
+    reloadProject();
+}
+
 function renderGantt(p) {
     if (!p.tasks.length) return '<div class="empty"><div class="empty-text">添加任务后会显示甘特图</div></div>';
     var today = new Date(); today.setHours(0,0,0,0);
@@ -647,49 +672,70 @@ function renderGantt(p) {
         tl += '<div class="gantt-col' + (isToday?' today':'') + (isWk?' weekend':'') + '" style="width:'+colW+'px;min-width:'+colW+'px">' + label + '</div>';
     });
     tl += '</div>';
-    // Rows
+    // Rows (with optional grouping)
     var rows = '';
     var todayIdx = -1;
     days.forEach(function(day,i){ if(day.toDateString()===today.toDateString()) todayIdx=i; });
-    var taskPos = {};  // id -> {top, left, width, rowIdx}
+    var taskPos = {};  // id -> {top, left, width}
     var ROW_H = 42;
+    var GROUP_H = 30;
     var BAR_H = 24;
     var BAR_TOP = 9;
-    p.tasks.forEach(function(t, ri) {
-        rows += '<div class="gantt-row" data-task-id="' + t.id + '">';
-        rows += '<div class="gantt-row-label" onclick="openTaskDetail(' + t.id + ')">' + esc(t.name) + '</div>';
-        rows += '<div class="gantt-row-grid">';
-        days.forEach(function(day) {
-            var isToday = day.toDateString() === today.toDateString();
-            var isWk = day.getDay()===0||day.getDay()===6;
-            rows += '<div class="gantt-cell' + (isToday?' today':'') + (isWk?' weekend':'') + '" style="width:'+colW+'px;min-width:'+colW+'px"></div>';
-        });
-        // Bar
-        var sd = parseDate(t.start_date), ed = parseDate(t.end_date);
-        if (sd && ed) {
-            var startOff = Math.round((sd - minD) / 86400000);
-            var dur = Math.max(1, Math.round((ed - sd) / 86400000) + 1);
-            var left = startOff * colW;
-            var w = dur * colW - 4;
-            var col = PHASE_COLORS[t.phase] || p.color || '#95A3B3';
-            taskPos[t.id] = { rowIdx: ri, left: left, width: w, top: ri * ROW_H + BAR_TOP, color: col };
-            rows += '<div class="gantt-bar" '
-                + 'data-task-id="' + t.id + '" '
-                + 'data-start="' + t.start_date + '" '
-                + 'data-end="' + t.end_date + '" '
-                + 'style="left:' + left + 'px;width:' + w + 'px;background:' + col + '" '
-                + 'title="' + esc(t.name) + ' (' + t.progress + '%) — 拖动移动 · 左右边缘拉伸 · 右侧圆点连线">';
-            rows += '<div class="gantt-bar-handle left"></div>';
-            rows += '<div class="gantt-bar-inner">';
-            if (t.progress > 0) rows += '<div class="gantt-bar-progress" style="width:' + t.progress + '%"></div>';
-            if (w > 50) rows += '<span class="gantt-bar-text">' + esc(t.name) + '</span>';
-            rows += '</div>';
-            rows += '<div class="gantt-bar-handle right"></div>';
-            rows += '<div class="gantt-bar-depend" data-task-id="' + t.id + '"></div>';
-            rows += '</div>';
+    var groups = ganttGroupTasks(p.tasks);
+    var rowOffset = 0; // cumulative pixel offset (task rows + group headers)
+
+    groups.forEach(function(g) {
+        // Group header row (only when grouping is active)
+        if (g.label !== null) {
+            var groupColor = (ganttGroup === 'phase' && g.tasks[0]) ? (PHASE_COLORS[g.tasks[0].phase] || '#95A3B3') : null;
+            var dotStyle = groupColor ? 'background:' + groupColor + ';' : '';
+            rows += '<div class="gantt-group-header">'
+                + '<div class="gantt-group-header-label" style="width:' + LABEL_W + 'px;min-width:' + LABEL_W + 'px">'
+                + (groupColor ? '<span class="gantt-group-dot" style="' + dotStyle + '"></span>' : '')
+                + esc(g.label) + ' <span class="gantt-group-count">' + g.tasks.length + '</span>'
+                + '</div>'
+                + '<div class="gantt-group-header-grid" style="flex:1"></div>'
+                + '</div>';
+            rowOffset += GROUP_H;
         }
-        rows += '</div></div>';
+        g.tasks.forEach(function(t) {
+            rows += '<div class="gantt-row" data-task-id="' + t.id + '">';
+            rows += '<div class="gantt-row-label" onclick="openTaskDetail(' + t.id + ')">' + esc(t.name) + '</div>';
+            rows += '<div class="gantt-row-grid">';
+            days.forEach(function(day) {
+                var isToday = day.toDateString() === today.toDateString();
+                var isWk = day.getDay()===0||day.getDay()===6;
+                rows += '<div class="gantt-cell' + (isToday?' today':'') + (isWk?' weekend':'') + '" style="width:'+colW+'px;min-width:'+colW+'px"></div>';
+            });
+            // Bar
+            var sd = parseDate(t.start_date), ed = parseDate(t.end_date);
+            if (sd && ed) {
+                var startOff = Math.round((sd - minD) / 86400000);
+                var dur = Math.max(1, Math.round((ed - sd) / 86400000) + 1);
+                var left = startOff * colW;
+                var w = dur * colW - 4;
+                var col = PHASE_COLORS[t.phase] || p.color || '#95A3B3';
+                taskPos[t.id] = { left: left, width: w, top: rowOffset + BAR_TOP, color: col };
+                rows += '<div class="gantt-bar" '
+                    + 'data-task-id="' + t.id + '" '
+                    + 'data-start="' + t.start_date + '" '
+                    + 'data-end="' + t.end_date + '" '
+                    + 'style="left:' + left + 'px;width:' + w + 'px;background:' + col + '" '
+                    + 'title="' + esc(t.name) + ' (' + t.progress + '%) — 拖动移动 · 左右边缘拉伸 · 右侧圆点连线">';
+                rows += '<div class="gantt-bar-handle left"></div>';
+                rows += '<div class="gantt-bar-inner">';
+                if (t.progress > 0) rows += '<div class="gantt-bar-progress" style="width:' + t.progress + '%"></div>';
+                if (w > 50) rows += '<span class="gantt-bar-text">' + esc(t.name) + '</span>';
+                rows += '</div>';
+                rows += '<div class="gantt-bar-handle right"></div>';
+                rows += '<div class="gantt-bar-depend" data-task-id="' + t.id + '"></div>';
+                rows += '</div>';
+            }
+            rows += '</div></div>';
+            rowOffset += ROW_H;
+        });
     });
+
     // Today line
     var todayLine = '';
     if (todayIdx >= 0) {
@@ -697,10 +743,9 @@ function renderGantt(p) {
     }
 
     // Dependency SVG overlay
-    var depsSVG = '';
     var totalW = days.length * colW;
-    var totalH = p.tasks.length * ROW_H;
-    depsSVG = '<svg class="gantt-deps-svg" width="' + totalW + '" height="' + totalH + '" style="position:absolute;left:' + LABEL_W + 'px;top:0;pointer-events:none;z-index:0;overflow:visible">'
+    var totalH = rowOffset;
+    var depsSVG = '<svg class="gantt-deps-svg" width="' + totalW + '" height="' + totalH + '" style="position:absolute;left:' + LABEL_W + 'px;top:0;pointer-events:none;z-index:0;overflow:visible">'
         + '<defs><marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#8A97A8"/></marker></defs>';
     var depsHitSVG = '<svg class="gantt-deps-hit-svg" width="' + totalW + '" height="' + totalH + '" style="position:absolute;left:' + LABEL_W + 'px;top:0;pointer-events:none;z-index:20;overflow:visible">';
     p.tasks.forEach(function(t) {
@@ -738,13 +783,23 @@ function renderGantt(p) {
     };
     p.tasks.forEach(function(t){ window._ganttCtx.tasksById[t.id] = t; });
 
+    var groupOpts = [['none','不分组'],['phase','按阶段'],['assignee','按负责人']];
+    var groupBar = '<div class="gantt-group-bar">'
+        + '<span class="gantt-group-label">分组</span>';
+    groupOpts.forEach(function(o) {
+        groupBar += '<span class="chip gantt-group-chip' + (ganttGroup===o[0]?' active':'') + '" onclick="setGanttGroup(\'' + o[0] + '\')">' + o[1] + '</span>';
+    });
+    groupBar += '</div>';
+
     return '<div class="gantt-wrap"><div class="gantt-header">'
         + '<span style="font-weight:600;color:var(--text2);font-size:13px">甘特图 <span style="color:var(--text3);font-weight:400;font-size:11px;margin-left:6px">拖动移动 · 边缘拉伸 · 圆点连依赖</span></span>'
+        + '<div style="display:flex;align-items:center;gap:12px">'
+        + groupBar
         + '<div class="gantt-zoom">'
         + '<button class="' + (ganttZoom==='day'?'active':'') + '" onclick="ganttZoom=\'day\';reloadProject()">日</button>'
         + '<button class="' + (ganttZoom==='week'?'active':'') + '" onclick="ganttZoom=\'week\';reloadProject()">周</button>'
         + '<button class="' + (ganttZoom==='month'?'active':'') + '" onclick="ganttZoom=\'month\';reloadProject()">月</button>'
-        + '</div></div>'
+        + '</div></div></div>'
         + '<div class="gantt-canvas" id="gantt-canvas" style="position:relative">' + tl + '<div class="gantt-rows" id="gantt-rows" style="position:relative">'
         + depsSVG + todayLine + rows + depsHitSVG + '</div></div></div>';
 }

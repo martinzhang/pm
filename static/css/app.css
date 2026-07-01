@@ -275,6 +275,38 @@ select.form-input{-webkit-appearance:none;appearance:none;background-image:url("
     opacity:0;transition:opacity .12s;
 }
 .gantt-tip.visible{opacity:1}
+.gantt-group-header{
+    display:flex;align-items:center;height:30px;
+    border-bottom:0.5px solid var(--border);
+    background:var(--bg);
+    position:relative;
+}
+.gantt-group-header-label{
+    position:sticky;left:0;z-index:3;
+    padding:0 12px;font-size:11px;font-weight:700;
+    color:var(--text2);letter-spacing:0.04em;text-transform:uppercase;
+    background:var(--bg);border-right:0.5px solid var(--border);
+    display:flex;align-items:center;gap:6px;height:100%;
+    text-overflow:ellipsis;overflow:hidden;white-space:nowrap;
+}
+.gantt-group-dot{
+    width:8px;height:8px;border-radius:50%;flex-shrink:0;
+}
+.gantt-group-count{
+    font-weight:400;color:var(--text3);font-size:11px;margin-left:2px;
+}
+.gantt-group-header-grid{
+    background:var(--bg);border-bottom:none;
+}
+.gantt-group-bar{
+    display:flex;align-items:center;gap:6px;
+}
+.gantt-group-label{
+    font-size:12px;color:var(--text3);font-weight:500;
+}
+.gantt-group-chip{
+    font-size:11px;padding:3px 9px;
+}
 
 /* ── Calendar ── */
 .cal-grid{
