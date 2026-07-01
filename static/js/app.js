@@ -497,7 +497,25 @@ function buildListToolbar() {
         ['phase', '按阶段'],
         ['assignee', '按负责人']
     ];
-    var h = '<div class="list-ctrl-row">';
+    var filterLabels = {'all':'全部','active':'进行中','done':'已完成'};
+    var sortLabels = {'default':'默认','assignee':'负责人','start':'开始时间','end':'结束时间'};
+    var groupLabels = {'none':'不分组','phase':'按阶段','assignee':'按负责人'};
+
+    // 状态摘要文字
+    var summary = filterLabels[_listFilter] || '全部';
+    if (_listSort !== 'default') summary += ' · ' + sortLabels[_listSort];
+    if (_listGroup !== 'none')   summary += ' · ' + groupLabels[_listGroup];
+    var hasNonDefault = (_listFilter !== 'all' || _listSort !== 'default' || _listGroup !== 'none');
+
+    // 折叠行（移动端可见）
+    var h = '<div class="list-toolbar-summary" onclick="toggleListToolbar()">'
+        + '<span class="list-toolbar-summary-text">' + summary + '</span>'
+        + (hasNonDefault ? '<span class="list-toolbar-dot"></span>' : '')
+        + '<span class="list-toolbar-summary-btn">筛选 ▾</span>'
+        + '</div>';
+
+    // 完整控件
+    h += '<div class="list-ctrl-row" id="list-ctrl-row">';
     h += '<span class="list-ctrl-label">筛选</span>';
     [['all','全部'],['active','进行中'],['done','已完成']].forEach(function(o) {
         h += '<span class="chip list-ctrl-chip' + (_listFilter === o[0] ? ' active' : '') + '" onclick="setListFilter(\'' + o[0] + '\')">' + o[1] + '</span>';
@@ -512,6 +530,12 @@ function buildListToolbar() {
     });
     h += '</div>';
     return h;
+}
+
+function toggleListToolbar() {
+    var row = document.getElementById('list-ctrl-row');
+    if (!row) return;
+    row.classList.toggle('list-ctrl-row--open');
 }
 
 function buildListBody(tasks) {
@@ -786,10 +810,11 @@ function renderGantt(p) {
                 rows += '<div class="gantt-bar-handle left"></div>';
                 rows += '<div class="gantt-bar-inner">';
                 if (t.progress > 0) rows += '<div class="gantt-bar-progress" style="width:' + t.progress + '%"></div>';
-                if (w > 50) rows += '<span class="gantt-bar-text">' + esc(t.name) + '</span>';
+                if (t.assignee_name && ganttGroup !== 'assignee' && w > 60) rows += '<span class="gantt-bar-text">' + esc(t.assignee_name) + '</span>';
                 rows += '</div>';
                 rows += '<div class="gantt-bar-handle right"></div>';
                 rows += '<div class="gantt-bar-depend" data-task-id="' + t.id + '"></div>';
+                if (t.assignee_name && ganttGroup !== 'assignee' && w <= 60) rows += '<span class="gantt-bar-label-out">' + esc(t.assignee_name) + '</span>';
                 rows += '</div>';
             }
             rows += '</div></div>';
@@ -853,7 +878,7 @@ function renderGantt(p) {
     groupBar += '</div>';
 
     return '<div class="gantt-wrap"><div class="gantt-header">'
-        + '<span style="font-weight:600;color:var(--text2);font-size:13px">甘特图 <span style="color:var(--text3);font-weight:400;font-size:11px;margin-left:6px">拖动移动 · 边缘拉伸 · 圆点连依赖</span></span>'
+        + '<span style="font-weight:600;color:var(--text2);font-size:13px">甘特图 <span class="gantt-header-hint" style="color:var(--text3);font-weight:400;font-size:11px;margin-left:6px">拖动移动 · 边缘拉伸 · 圆点连依赖</span></span>'
         + '<div style="display:flex;align-items:center;gap:12px">'
         + groupBar
         + '<div class="gantt-zoom">'
