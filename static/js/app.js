@@ -3,6 +3,8 @@ var ME = null;
 var USERS = [];
 var currentProject = null;
 var calYear, calMonth;
+var _listSort = 'default';   // 'default' | 'assignee' | 'start' | 'end'
+var _listGroup = 'none';     // 'none' | 'phase' | 'assignee'
 
 // ── Project-level phase override ──
 // Default (built-in) phases can only be enabled/disabled per project.
@@ -111,6 +113,7 @@ function _discoverLegacyPhases(norm, tasks) {
     window._hashPhaseColor = hashColor;
 })();
 var ganttZoom = 'week';
+var ganttLabelW = parseInt(localStorage.getItem('ganttLabelW') || '160', 10);
 var ORG_DATA = null;
 var USERS_MAP = {};
 
@@ -454,12 +457,8 @@ function renderProjectDetail(p) {
 
     // Task list
     html += '<div id="list-view" style="display:none">';
-    if (!p.tasks.length) {
-        html += '<div class="empty"><div class="empty-text">还没有任务 -- 点右下角 + 创建</div></div>';
-    }
-    p.tasks.forEach(function(t) {
-        html += taskItemHtml(t);
-    });
+    html += '<div class="list-toolbar" id="list-toolbar">' + buildListToolbar() + '</div>';
+    html += '<div id="list-body">' + buildListBody(p.tasks) + '</div>';
     html += '</div>';
 
     // Project files — placed at the bottom, after the gantt & task list
@@ -475,6 +474,106 @@ function setView(v) {
     document.getElementById('list-view').style.display = v === 'list' ? '' : 'none';
     document.getElementById('view-gantt-btn').className = 'chip' + (v === 'gantt' ? ' active' : '');
     document.getElementById('view-list-btn').className = 'chip' + (v === 'list' ? ' active' : '');
+}
+
+function buildListToolbar() {
+    var sortOpts = [
+        ['default', '默认'],
+        ['assignee', '负责人'],
+        ['start', '开始时间'],
+        ['end', '结束时间']
+    ];
+    var groupOpts = [
+        ['none', '不分组'],
+        ['phase', '按阶段'],
+        ['assignee', '按负责人']
+    ];
+    var h = '<div class="list-ctrl-row">';
+    h += '<span class="list-ctrl-label">排序</span>';
+    sortOpts.forEach(function(o) {
+        h += '<span class="chip list-ctrl-chip' + (_listSort === o[0] ? ' active' : '') + '" onclick="setListSort(\'' + o[0] + '\')">' + o[1] + '</span>';
+    });
+    h += '<span class="list-ctrl-sep"></span><span class="list-ctrl-label">分组</span>';
+    groupOpts.forEach(function(o) {
+        h += '<span class="chip list-ctrl-chip' + (_listGroup === o[0] ? ' active' : '') + '" onclick="setListGroup(\'' + o[0] + '\')">' + o[1] + '</span>';
+    });
+    h += '</div>';
+    return h;
+}
+
+function buildListBody(tasks) {
+    if (!tasks || !tasks.length) {
+        return '<div class="empty"><div class="empty-text">还没有任务 -- 点右下角 + 创建</div></div>';
+    }
+    var sorted = sortTasks(tasks.slice());
+    if (_listGroup === 'none') {
+        return sorted.map(taskItemHtml).join('');
+    }
+    var groups = groupTasks(sorted);
+    var h = '';
+    groups.forEach(function(g) {
+        h += '<div class="list-group-header">' + esc(g.label) + ' <span class="list-group-count">' + g.tasks.length + '</span></div>';
+        h += g.tasks.map(taskItemHtml).join('');
+    });
+    return h;
+}
+
+function sortTasks(arr) {
+    if (_listSort === 'default') return arr;
+    arr.sort(function(a, b) {
+        var va, vb;
+        if (_listSort === 'assignee') {
+            va = (a.assignee_name || '').toLowerCase();
+            vb = (b.assignee_name || '').toLowerCase();
+        } else if (_listSort === 'start') {
+            va = a.start_date || '';
+            vb = b.start_date || '';
+        } else if (_listSort === 'end') {
+            va = a.end_date || '';
+            vb = b.end_date || '';
+        }
+        if (va < vb) return -1;
+        if (va > vb) return 1;
+        return 0;
+    });
+    return arr;
+}
+
+function groupTasks(arr) {
+    var map = {}, order = [];
+    arr.forEach(function(t) {
+        var key, label;
+        if (_listGroup === 'phase') {
+            key = t.phase || '';
+            label = PHASE_MAP[key] || key || '未分类';
+        } else {
+            key = t.assignee_name || '';
+            label = key || '未分配';
+        }
+        if (!map[key]) { map[key] = { label: label, tasks: [] }; order.push(key); }
+        map[key].tasks.push(t);
+    });
+    return order.map(function(k) { return map[k]; });
+}
+
+function setListSort(v) {
+    _listSort = v;
+    var tb = document.getElementById('list-toolbar');
+    if (tb) tb.innerHTML = buildListToolbar();
+    refreshListBody();
+}
+
+function setListGroup(v) {
+    _listGroup = v;
+    var tb = document.getElementById('list-toolbar');
+    if (tb) tb.innerHTML = buildListToolbar();
+    refreshListBody();
+}
+
+function refreshListBody() {
+    var el = document.getElementById('list-body');
+    if (!el || !currentProject) return;
+    el.innerHTML = buildListBody(currentProject.tasks);
 }
 
 function taskItemHtml(t) {
@@ -535,9 +634,10 @@ function renderGantt(p) {
     var days = [];
     var d = new Date(minD);
     while (d <= maxD) { days.push(new Date(d)); d.setDate(d.getDate() + 1); }
-    var LABEL_W = 160;
+    var LABEL_W = Math.max(80, Math.min(400, ganttLabelW));
     // Timeline header
-    var tl = '<div class="gantt-timeline" style="padding-left:' + LABEL_W + 'px">';
+    var tl = '<div class="gantt-timeline" style="padding-left:' + LABEL_W + 'px">'
+        + '<div class="gantt-label-resizer" id="gantt-label-resizer" style="left:' + (LABEL_W - 2) + 'px"></div>';
     days.forEach(function(day) {
         var isToday = day.toDateString() === today.toDateString();
         var isWk = day.getDay() === 0 || day.getDay() === 6;
@@ -634,7 +734,7 @@ function renderGantt(p) {
     // Stash context for drag handlers
     window._ganttCtx = {
         minD: minD, colW: colW, labelW: LABEL_W, rowH: ROW_H, projectId: p.id,
-        totalDays: days.length, tasksById: {}
+        totalDays: days.length, tasksById: {}, _todayIdx: todayIdx
     };
     p.tasks.forEach(function(t){ window._ganttCtx.tasksById[t.id] = t; });
 
@@ -680,6 +780,62 @@ function ganttAttachHandlers() {
             ganttRemoveDep(parseInt(fromId, 10), parseInt(toId, 10));
         });
     });
+    ganttLabelResizeAttach();
+}
+
+function ganttLabelResizeAttach() {
+    var handle = document.getElementById('gantt-label-resizer');
+    if (!handle) return;
+    handle.addEventListener('pointerdown', function(ev) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        handle.setPointerCapture(ev.pointerId);
+        var startX = ev.clientX;
+        var startW = ganttLabelW;
+        document.body.style.cursor = 'ew-resize';
+        document.body.style.userSelect = 'none';
+        function onMove(e) {
+            var newW = Math.max(80, Math.min(400, startW + e.clientX - startX));
+            ganttLabelW = newW;
+            ganttApplyLabelWidth(newW);
+        }
+        function onUp() {
+            document.body.style.cursor = '';
+            document.body.style.userSelect = '';
+            localStorage.setItem('ganttLabelW', String(ganttLabelW));
+            handle.removeEventListener('pointermove', onMove);
+            handle.removeEventListener('pointerup', onUp);
+            handle.removeEventListener('pointercancel', onUp);
+        }
+        handle.addEventListener('pointermove', onMove);
+        handle.addEventListener('pointerup', onUp);
+        handle.addEventListener('pointercancel', onUp);
+    });
+}
+
+function ganttApplyLabelWidth(w) {
+    // Update handle position
+    var handle = document.getElementById('gantt-label-resizer');
+    if (handle) handle.style.left = (w - 2) + 'px';
+    // Update timeline padding
+    var tl = document.querySelector('.gantt-timeline');
+    if (tl) tl.style.paddingLeft = w + 'px';
+    // Update every row label
+    document.querySelectorAll('.gantt-row-label').forEach(function(el) {
+        el.style.minWidth = w + 'px';
+        el.style.maxWidth = w + 'px';
+    });
+    // Update SVGs (today line, dep SVGs)
+    var ctx = window._ganttCtx;
+    if (!ctx) return;
+    ctx.labelW = w;
+    document.querySelectorAll('.gantt-deps-svg, .gantt-deps-hit-svg').forEach(function(svg) {
+        svg.style.left = w + 'px';
+    });
+    var todayLine = document.querySelector('.gantt-today-line');
+    if (todayLine && ctx.colW && ctx._todayIdx >= 0) {
+        todayLine.style.left = (w + ctx._todayIdx * ctx.colW + ctx.colW / 2) + 'px';
+    }
 }
 
 // Remove dependency "fromId → toId" with 5s undo toast
