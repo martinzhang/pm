@@ -5,6 +5,7 @@ var currentProject = null;
 var calYear, calMonth;
 var _listSort = 'default';   // 'default' | 'assignee' | 'start' | 'end'
 var _listGroup = 'none';     // 'none' | 'phase' | 'assignee'
+var _listFilter = 'all';     // 'all' | 'active' | 'done'
 
 // ── Project-level phase override ──
 // Default (built-in) phases can only be enabled/disabled per project.
@@ -336,12 +337,19 @@ function loadDashboard() {
             html += '<div class="section-title" style="margin-top:18px;padding:0 4px 8px;font-size:13px;color:var(--muted);font-weight:600">最近完成</div>';
             d.recent_completed.forEach(function(t) {
                 var badge;
-                if (t.end_date && t.completed_at && t.completed_at.slice(0,10) > t.end_date) {
-                    var cd = t.completed_at.slice(0,10);
-                    var mo = parseInt(cd.slice(5,7),10), dd = parseInt(cd.slice(8,10),10);
-                    badge = '<span style="color:#E85D5D;font-weight:600">逾期完成 · ' + mo + '月' + dd + '日</span>';
+                var cd = t.completed_at ? t.completed_at.slice(0,10) : '';
+                var mo = cd ? parseInt(cd.slice(5,7),10) : 0, dy = cd ? parseInt(cd.slice(8,10),10) : 0;
+                var dateStr = cd ? (mo + '月' + dy + '日') : '';
+                if (t.end_date && cd) {
+                    if (cd > t.end_date) {
+                        badge = '<span style="color:#E85D5D;font-weight:600">逾期完成 · ' + dateStr + '</span>';
+                    } else if (cd < t.end_date) {
+                        badge = '<span style="color:#007AFF;font-weight:600">提前完成 · ' + dateStr + '</span>';
+                    } else {
+                        badge = '<span style="color:#34C759;font-weight:600">已完成 · ' + dateStr + '</span>';
+                    }
                 } else {
-                    badge = '<span style="color:#34C759;font-weight:600">已完成</span>';
+                    badge = '<span style="color:#34C759;font-weight:600">已完成' + (dateStr ? ' · ' + dateStr : '') + '</span>';
                 }
                 html += '<div class="task-item" onclick="openProject(' + t.project_id + ')">'
                     + progressRing(100, 32)
@@ -490,7 +498,11 @@ function buildListToolbar() {
         ['assignee', '按负责人']
     ];
     var h = '<div class="list-ctrl-row">';
-    h += '<span class="list-ctrl-label">排序</span>';
+    h += '<span class="list-ctrl-label">筛选</span>';
+    [['all','全部'],['active','进行中'],['done','已完成']].forEach(function(o) {
+        h += '<span class="chip list-ctrl-chip' + (_listFilter === o[0] ? ' active' : '') + '" onclick="setListFilter(\'' + o[0] + '\')">' + o[1] + '</span>';
+    });
+    h += '<span class="list-ctrl-sep"></span><span class="list-ctrl-label">排序</span>';
     sortOpts.forEach(function(o) {
         h += '<span class="chip list-ctrl-chip' + (_listSort === o[0] ? ' active' : '') + '" onclick="setListSort(\'' + o[0] + '\')">' + o[1] + '</span>';
     });
@@ -506,16 +518,38 @@ function buildListBody(tasks) {
     if (!tasks || !tasks.length) {
         return '<div class="empty"><div class="empty-text">还没有任务 -- 点右下角 + 创建</div></div>';
     }
-    var sorted = sortTasks(tasks.slice());
-    if (_listGroup === 'none') {
-        return sorted.map(taskItemHtml).join('');
+    // 筛选
+    var filtered = tasks.filter(function(t) {
+        if (_listFilter === 'active') return t.progress < 100;
+        if (_listFilter === 'done')   return t.progress >= 100;
+        return true;
+    });
+    if (!filtered.length) {
+        return '<div class="empty"><div class="empty-text">没有符合条件的任务</div></div>';
     }
-    var groups = groupTasks(sorted);
+    // 已完成固定排底部
+    var active = filtered.filter(function(t) { return t.progress < 100; });
+    var done   = filtered.filter(function(t) { return t.progress >= 100; });
+    var sortedActive = sortTasks(active.slice());
+    var sortedDone   = sortTasks(done.slice());
+    if (_listGroup === 'none') {
+        var html = sortedActive.map(taskItemHtml).join('');
+        if (sortedDone.length) {
+            html += '<div class="list-group-header" style="margin-top:8px">已完成 <span class="list-group-count">' + sortedDone.length + '</span></div>';
+            html += sortedDone.map(taskItemHtml).join('');
+        }
+        return html;
+    }
+    var grouped = groupTasks(sortedActive);
     var h = '';
-    groups.forEach(function(g) {
+    grouped.forEach(function(g) {
         h += '<div class="list-group-header">' + esc(g.label) + ' <span class="list-group-count">' + g.tasks.length + '</span></div>';
         h += g.tasks.map(taskItemHtml).join('');
     });
+    if (sortedDone.length) {
+        h += '<div class="list-group-header" style="margin-top:8px">已完成 <span class="list-group-count">' + sortedDone.length + '</span></div>';
+        h += sortedDone.map(taskItemHtml).join('');
+    }
     return h;
 }
 
@@ -570,6 +604,12 @@ function setListGroup(v) {
     if (tb) tb.innerHTML = buildListToolbar();
     refreshListBody();
 }
+function setListFilter(v) {
+    _listFilter = v;
+    var tb = document.getElementById('list-toolbar');
+    if (tb) tb.innerHTML = buildListToolbar();
+    refreshListBody();
+}
 
 function refreshListBody() {
     var el = document.getElementById('list-body');
@@ -583,6 +623,21 @@ function taskItemHtml(t) {
         ? ' <span class="collab-badge" title="' + collabCount + ' 位协作者">+' + collabCount + '</span>'
         : '';
     var isDone = t.progress >= 100;
+    var today = new Date().toISOString().slice(0,10);
+    var overdue = !isDone && t.end_date && t.end_date < today;
+    var completionBadge = '';
+    if (isDone && t.completed_at) {
+        var cd = t.completed_at.slice(0,10);
+        var mo = parseInt(cd.slice(5,7),10), dy = parseInt(cd.slice(8,10),10);
+        var dateStr = mo + '月' + dy + '日';
+        if (t.end_date && cd > t.end_date) {
+            completionBadge = '<span style="color:#E85D5D;font-weight:600">逾期完成 · ' + dateStr + '</span>';
+        } else if (t.end_date && cd < t.end_date) {
+            completionBadge = '<span style="color:#007AFF;font-weight:600">提前完成 · ' + dateStr + '</span>';
+        } else {
+            completionBadge = '<span style="color:#34C759;font-weight:600">已完成 · ' + dateStr + '</span>';
+        }
+    }
     var metaBadges = '';
     if (t.comment_count > 0) {
         metaBadges += '<span class="task-meta-badge" title="' + t.comment_count + ' 条讨论">'
@@ -601,7 +656,11 @@ function taskItemHtml(t) {
         + (PHASE_MAP[t.phase]||'') + '</span> ' + esc(t.name) + '</div>'
         + '<div class="task-sub">'
         + (t.assignee_name ? '<span>' + esc(t.assignee_name) + collabBadge + '</span>' : (collabCount > 0 ? '<span>未分配' + collabBadge + '</span>' : ''))
-        + '<span>' + (t.start_date||'') + ' ~ ' + (t.end_date||'') + '</span>'
+        + (isDone && completionBadge
+            ? completionBadge
+            : '<span>' + (t.start_date||'') + ' ~ ' + (t.end_date||'') + '</span>'
+              + (overdue ? '<span style="color:#E85D5D;font-weight:600">已逾期</span>' : '')
+          )
         + (metaBadges ? '<span class="task-meta-badges">' + metaBadges + '</span>' : '')
         + '</div></div>'
         + priorityTag(t.priority)
