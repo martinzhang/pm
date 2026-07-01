@@ -661,8 +661,10 @@ function renderGantt(p) {
     while (d <= maxD) { days.push(new Date(d)); d.setDate(d.getDate() + 1); }
     var LABEL_W = Math.max(80, Math.min(400, ganttLabelW));
     // Timeline header
-    var tl = '<div class="gantt-timeline" style="padding-left:' + LABEL_W + 'px">'
-        + '<div class="gantt-label-resizer" id="gantt-label-resizer" style="left:' + (LABEL_W - 2) + 'px"></div>';
+    var tl = '<div class="gantt-timeline">'
+        + '<div class="gantt-tl-label" style="width:' + LABEL_W + 'px;min-width:' + LABEL_W + 'px">'
+        + '<div class="gantt-label-resizer" id="gantt-label-resizer"></div>'
+        + '</div>';
     days.forEach(function(day) {
         var isToday = day.toDateString() === today.toDateString();
         var isWk = day.getDay() === 0 || day.getDay() === 6;
@@ -700,7 +702,7 @@ function renderGantt(p) {
         }
         g.tasks.forEach(function(t) {
             rows += '<div class="gantt-row" data-task-id="' + t.id + '">';
-            rows += '<div class="gantt-row-label" onclick="openTaskDetail(' + t.id + ')">' + esc(t.name) + '</div>';
+            rows += '<div class="gantt-row-label" style="min-width:' + LABEL_W + 'px;max-width:' + LABEL_W + 'px" onclick="openTaskDetail(' + t.id + ')">' + esc(t.name) + '</div>';
             rows += '<div class="gantt-row-grid">';
             days.forEach(function(day) {
                 var isToday = day.toDateString() === today.toDateString();
@@ -800,8 +802,10 @@ function renderGantt(p) {
         + '<button class="' + (ganttZoom==='week'?'active':'') + '" onclick="ganttZoom=\'week\';reloadProject()">周</button>'
         + '<button class="' + (ganttZoom==='month'?'active':'') + '" onclick="ganttZoom=\'month\';reloadProject()">月</button>'
         + '</div></div></div>'
+        + '<div class="gantt-scroll-area">'
         + '<div class="gantt-canvas" id="gantt-canvas" style="position:relative">' + tl + '<div class="gantt-rows" id="gantt-rows" style="position:relative">'
-        + depsSVG + todayLine + rows + depsHitSVG + '</div></div></div>';
+        + depsSVG + todayLine + rows + depsHitSVG + '</div></div>'
+        + '</div></div>';
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -869,12 +873,13 @@ function ganttLabelResizeAttach() {
 }
 
 function ganttApplyLabelWidth(w) {
-    // Update handle position
-    var handle = document.getElementById('gantt-label-resizer');
-    if (handle) handle.style.left = (w - 2) + 'px';
-    // Update timeline padding
-    var tl = document.querySelector('.gantt-timeline');
-    if (tl) tl.style.paddingLeft = w + 'px';
+    // Update timeline label cell width
+    var tlLabel = document.querySelector('.gantt-tl-label');
+    if (tlLabel) { tlLabel.style.width = w + 'px'; tlLabel.style.minWidth = w + 'px'; }
+    // Update group header label width
+    document.querySelectorAll('.gantt-group-header-label').forEach(function(el) {
+        el.style.width = w + 'px'; el.style.minWidth = w + 'px';
+    });
     // Update every row label
     document.querySelectorAll('.gantt-row-label').forEach(function(el) {
         el.style.minWidth = w + 'px';
