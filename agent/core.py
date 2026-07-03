@@ -187,6 +187,8 @@ async def astream_reply(
             if event.event == RunEvent.run_content and event.content:
                 yield event.content
     except Exception as e:  # noqa: BLE001 -- 兜底：任何异常都回一句友好提示，不让机器人卡死
+        from loguru import logger
+        logger.bind(uid=user_id or "-").exception("Agent 运行异常，已向用户返回兜底提示")
         yield f"\n\n（小鱼开小差了，稍后再试试～ 错误：{e}）"
 
 

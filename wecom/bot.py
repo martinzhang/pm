@@ -13,10 +13,14 @@ import os
 from pathlib import Path
 
 from aibot import WSClient, WSClientOptions
+from loguru import logger
 
+import logconf
 from wecom import notify
 from wecom import agent as wecom_agent
 from repositories import users as users_repo
+
+logconf.setup()
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 ENV_LOCAL = REPO_ROOT / ".env.local"
@@ -45,16 +49,16 @@ ws_client = WSClient(WSClientOptions(bot_id=BOT_ID, secret=BOT_SECRET))
 
 @ws_client.on("authenticated")
 def on_authenticated():
-    print("机器人已上线")
+    logger.info("机器人已上线，启动到期检查循环")
     asyncio.ensure_future(_due_check_loop())
 
 
 async def _due_check_loop():
     while True:
         try:
-            await notify.run_due_check(ws_client)
-        except Exception as e:
-            print(f"到期检查出错: {e}")
+            await notify.run_due_check(ws_client, logger=logger)
+        except Exception:
+            logger.exception("到期检查循环出错")
         await asyncio.sleep(DUE_CHECK_INTERVAL_SECONDS)
 
 
@@ -73,8 +77,8 @@ def _resolve_identity(wecom_userid):
     try:
         conn = get_db()
         user = users_repo.get_by_wecom(conn, wecom_userid)
-    except Exception as e:
-        print(f"身份解析出错: {e}", flush=True)
+    except Exception:
+        logger.bind(uid=wecom_userid).exception("身份解析查库出错，降级为未绑定")
         user = None
     finally:
         if conn is not None:
@@ -94,30 +98,38 @@ def _resolve_identity(wecom_userid):
 async def on_text(frame):
     body = frame.get("body", {})
     content = body.get("text", {}).get("content", "").strip()
-    print(f"收到消息: {content}")
+
+    # session_id / user_id 用发送者 userid——既实现每人独立的多轮记忆，
+    # 也让 bind_user 工具能从 RunContext.user_id 拿到当前企微身份。
+    wecom_userid = body.get("from", {}).get("userid", "") or "anon"
+    log = logger.bind(uid=wecom_userid)
+    log.info("收到消息: {}", logconf.truncate(content))
 
     if not content:
         return
 
-    # 所有文本统一交给 Agno 小鱼助手：聊天、绑定账号等都靠对话+工具完成。
-    # session_id / user_id 用发送者 userid——既实现每人独立的多轮记忆，
-    # 也让 bind_user 工具能从 RunContext.user_id 拿到当前企微身份。
-    wecom_userid = body.get("from", {}).get("userid", "") or "anon"
-
     # 反查身份：这个企微 userid 绑没绑系统账号、绑的是谁。作为通用契约传给 Agent，
     # 让它区分「已绑定同事(称呼名字)」和「未绑定(引导绑定)」。DB 访问集中在入口层。
     identity = _resolve_identity(wecom_userid)
-
-    await wecom_agent.handle_message(
-        ws_client, frame, content,
-        session_id=wecom_userid, user_id=wecom_userid,
-        identity=identity,
+    log.info(
+        "身份解析: bound={} name={}",
+        identity.get("bound"),
+        identity.get("display_name", ""),
     )
+
+    try:
+        await wecom_agent.handle_message(
+            ws_client, frame, content,
+            session_id=wecom_userid, user_id=wecom_userid,
+            identity=identity,
+        )
+    except Exception:
+        log.exception("处理消息失败")
 
 
 @ws_client.on("error")
 def on_error(error):
-    print(f"发生错误: {error}")
+    logger.error("WebSocket 发生错误: {}", error)
 
 
 if __name__ == "__main__":

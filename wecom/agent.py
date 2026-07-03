@@ -16,6 +16,7 @@ import time
 from typing import Any, Dict, Optional
 
 from aibot import generate_req_id
+from loguru import logger
 
 from agent.core import astream_reply
 
@@ -46,13 +47,16 @@ async def handle_message(
     :param identity: 当前对话者身份（已绑定/未绑定 + 名字），透传给 Agent 做区分对待
     """
     stream_id = generate_req_id("stream")
+    log = logger.bind(uid=user_id or session_id or "-")
 
     # 先发占位，降低首字延迟的等待感；后续真正内容会全量覆盖它
     try:
         await ws_client.reply_stream(frame, stream_id, THINKING_PLACEHOLDER, False)
     except Exception:
-        pass
+        log.warning("发送占位帧失败（忽略，不影响后续内容）")
 
+    started = time.monotonic()
+    first_token_ts = None    # 首字到达时间，用于观测首字延迟
     full = ""
     last_sent = ""           # 上次真正发出去的内容，避免重复推同样内容
     last_flush_len = 0       # 上次下发时的正文长度
@@ -62,6 +66,8 @@ async def handle_message(
         text, session_id=session_id, user_id=user_id, identity=identity
     ):
         full += delta
+        if first_token_ts is None:
+            first_token_ts = time.monotonic()
         # lstrip 掉 MiniMax 剥 <think> 后残留的前导空行；全量语义下每帧重算，幂等
         display = full.lstrip()
         if not display:
@@ -74,7 +80,7 @@ async def handle_message(
                     await ws_client.reply_stream(frame, stream_id, display, False)
                     last_sent = display
                 except Exception:
-                    pass
+                    log.warning("发送流式增量帧失败（忽略，等收尾帧重试）")
                 last_flush_len = len(display)
                 last_flush_ts = now
 
@@ -82,5 +88,12 @@ async def handle_message(
     final = full.lstrip() or EMPTY_FALLBACK
     try:
         await ws_client.reply_stream(frame, stream_id, final, True)
-    except Exception as e:  # noqa: BLE001
-        print(f"[wecom.agent] 发送最终回复失败: {e}", flush=True)
+    except Exception:
+        log.exception("发送最终回复失败")
+
+    # 回复完成的可观测指标：首字延迟 + 总耗时 + 字数，便于上线后调优
+    first_latency = (first_token_ts - started) if first_token_ts else -1
+    log.info(
+        "回复完成: chars={} first_latency={:.2f}s total={:.2f}s",
+        len(final), first_latency, time.monotonic() - started,
+    )
