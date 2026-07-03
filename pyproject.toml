@@ -10,4 +10,8 @@ dependencies = [
     "websockets[socks]>=16.0",
     "python-socks>=2.8.2",
     "python-dotenv>=1.2.2",
+    # AI 大脑（agent/ 包）：Agno 框架 + MiniMax（OpenAILike，用 openai SDK）+ SqliteDb 会话库（sqlalchemy）
+    "agno>=2.6",
+    "openai>=1.0",
+    "sqlalchemy>=2.0",
 ]

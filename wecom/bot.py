@@ -3,18 +3,19 @@
 
 独立进程运行（与 Flask 应用分开），基于 wecom-aibot-python-sdk 的 WebSocket 长连接。
 在仓库根目录执行: uv run python -m wecom.bot
-- 收到 "hi" 时回复 "hi"（连通性测试）
-- 收到 "绑定 <username>" 时把发送者的企业微信 userid 写入 users 表
-- 认证成功后启动后台循环，定期检查任务到期情况并主动推送
+- 所有文本消息统一交给 Agno Agent（wecom/agent.py）：聊天、绑定账号等都靠对话+工具完成，
+  不再有关键字匹配（"绑定 xxx" 由 Agent 的 bind_user 工具处理）
+- 认证成功后启动后台循环，定期检查任务到期情况并主动推送（到期提醒是确定性定时任务，
+  不走 Agent）
 """
 import asyncio
 import os
 from pathlib import Path
 
-from aibot import WSClient, WSClientOptions, generate_req_id
+from aibot import WSClient, WSClientOptions
 
 from wecom import notify
-from models import get_db
+from wecom import agent as wecom_agent
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 ENV_LOCAL = REPO_ROOT / ".env.local"
@@ -62,25 +63,17 @@ async def on_text(frame):
     content = body.get("text", {}).get("content", "").strip()
     print(f"收到消息: {content}")
 
-    if content.lower() == "hi":
-        stream_id = generate_req_id("stream")
-        await ws_client.reply_stream(frame, stream_id, "hi", True)
+    if not content:
         return
 
-    if content.startswith("绑定 "):
-        username = content[len("绑定 "):].strip()
-        wecom_userid = body.get("from", {}).get("userid", "")
-        stream_id = generate_req_id("stream")
-        if not username or not wecom_userid:
-            await ws_client.reply_stream(frame, stream_id, "用法: 绑定 你的用户名", True)
-            return
-        conn = get_db()
-        try:
-            ok = notify.bind_wecom_user(conn, username, wecom_userid)
-        finally:
-            conn.close()
-        reply_text = f"绑定成功: {username}" if ok else f"未找到用户: {username}"
-        await ws_client.reply_stream(frame, stream_id, reply_text, True)
+    # 所有文本统一交给 Agno 小鱼助手：聊天、绑定账号等都靠对话+工具完成。
+    # session_id / user_id 用发送者 userid——既实现每人独立的多轮记忆，
+    # 也让 bind_user 工具能从 RunContext.user_id 拿到当前企微身份。
+    wecom_userid = body.get("from", {}).get("userid", "") or "anon"
+    await wecom_agent.handle_message(
+        ws_client, frame, content,
+        session_id=wecom_userid, user_id=wecom_userid,
+    )
 
 
 @ws_client.on("error")
