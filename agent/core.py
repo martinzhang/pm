@@ -19,6 +19,7 @@ from agno.agent import Agent
 from agno.db.sqlite import SqliteDb
 from agno.models.minimax import MiniMax
 from agno.run.agent import RunEvent
+from agno.tracing import setup_tracing
 
 from config import MINIMAX_API_KEY, MINIMAX_BASE, MINIMAX_MODEL
 from agent.tools import (
@@ -83,11 +84,15 @@ def _identity_of(run_context) -> Dict[str, Any]:
     return ident if isinstance(ident, dict) else {}
 
 
-def _build_instructions(run_context) -> list:
+def _build_instructions(run_context=None) -> list:
     """按当前对话者身份拼装指令：核心恒定 + 能力块动态挂载。
 
     - 未绑定：核心 + 绑定能力块（引导 + 绑定动作）
     - 已绑定：核心 + 一句「你在跟谁说话」+ 只读 PM 能力块，不含任何绑定相关文字
+
+    run_context 默认 None（视作未绑定）：Agno 自身总是传真实的 run_context，
+    这个默认值只是为了兼容 openinference-instrumentation-agno 埋点时的无参调用
+    （它调 agent.tools()/agent.instructions() 不传参，纯为了拿工具名列表打 span 属性）。
     """
     ident = _identity_of(run_context)
     blocks = [BASE_INSTRUCTIONS]
@@ -103,11 +108,13 @@ def _build_instructions(run_context) -> list:
     return blocks
 
 
-def _build_tools(run_context) -> list:
+def _build_tools(run_context=None) -> list:
     """按身份挂载工具：
 
     - 未绑定：只有 bind_user（引导绑定），拿不到任何数据工具。
     - 已绑定：5 个只读 PM 工具；不含 bind_user（已绑用户不需要再绑）。
+
+    run_context 默认 None，原因同 _build_instructions：兼容埋点库的无参内省调用。
     """
     if _identity_of(run_context).get("bound"):
         return [get_my_tasks, get_my_projects, get_project_status, get_my_schedule, get_my_alerts]
@@ -124,13 +131,17 @@ def get_agent() -> Agent:
     """
     global _agent
     if _agent is None:
+        db = SqliteDb(db_file=str(SESSION_DB_PATH))
+        # 复用同一个 db：trace/span 表和会话表落在同一个 sqlite 文件里，
+        # 调一次即可——之后所有 agent.arun 都会自动生成 trace，写进 traces_table/spans_table。
+        setup_tracing(db=db)
         _agent = Agent(
             model=MiniMax(
                 id=MINIMAX_MODEL,
                 api_key=MINIMAX_API_KEY,
                 base_url=MINIMAX_BASE,  # 显式指向国内端点 api.minimaxi.com，覆盖 Agno 默认的 .io
             ),
-            db=SqliteDb(db_file=str(SESSION_DB_PATH)),
+            db=db,
             instructions=_build_instructions, 
             tools=_build_tools,
             add_history_to_context=True,  # 把最近几轮对话带进上下文 -> 多轮记忆

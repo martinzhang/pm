@@ -15,4 +15,7 @@ dependencies = [
     "openai>=1.0",
     "sqlalchemy>=2.0",
     "loguru>=0.7.3",
+    "opentelemetry-api>=1.43.0",
+    "opentelemetry-sdk>=1.43.0",
+    "openinference-instrumentation-agno>=0.1.38",
 ]
