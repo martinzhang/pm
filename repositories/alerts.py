@@ -25,3 +25,18 @@ def insert(conn, user_id, alert_type, title, message, task_id, project_id):
         (user_id, alert_type, title, message, task_id, project_id, now),
     )
     conn.commit()
+
+
+def find_unread_by_user(conn, user_id, limit=10):
+    """查某人最近的未读提醒（is_read=0），按创建时间倒序。
+
+    返回 [dict(...alert 列...), ...]；user_id 为空返回 []。
+    """
+    if not user_id:
+        return []
+    rows = conn.execute(
+        "SELECT * FROM alerts WHERE user_id=? AND is_read=0 "
+        "ORDER BY created_at DESC LIMIT ?",
+        (user_id, limit),
+    ).fetchall()
+    return [dict(r) for r in rows]

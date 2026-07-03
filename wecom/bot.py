@@ -61,7 +61,7 @@ async def _due_check_loop():
 def _resolve_identity(wecom_userid):
     """把企微 userid 解析成给 Agent 的通用身份契约。
 
-    已绑定 -> {"bound": True, "display_name", "username", "role"}
+    已绑定 -> {"bound": True, "id", "display_name", "username", "role"}
     未绑定/查库异常 -> {"bound": False}
     异常时静默降级为未绑定，不阻断聊天。
     """
@@ -83,6 +83,7 @@ def _resolve_identity(wecom_userid):
         return {"bound": False}
     return {
         "bound": True,
+        "id": user.get("id"),  # 内部 user id：只读工具按 assignee_id 查「我的任务」必需
         "display_name": user.get("display_name") or user.get("username") or "",
         "username": user.get("username") or "",
         "role": user.get("role") or "",

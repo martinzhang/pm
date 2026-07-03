@@ -21,7 +21,13 @@ from agno.models.minimax import MiniMax
 from agno.run.agent import RunEvent
 
 from config import MINIMAX_API_KEY, MINIMAX_BASE, MINIMAX_MODEL
-from agent.tools import bind_user
+from agent.tools import (
+    bind_user,
+    get_my_tasks,
+    get_project_status,
+    get_my_schedule,
+    get_my_alerts,
+)
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 # 独立于 projects.db 的会话库，只存 Agno 的对话历史，不碰业务表
@@ -51,6 +57,22 @@ BIND_INSTRUCTIONS = """【关于当前对话者】ta 还没绑定系统账号。
 - username 用 ta 给出的登录名，不要自己猜或编造；没给就先问。
 - 工具返回什么就如实转达，不要谎称成功；绑定成功时用返回的名字亲切称呼 ta。"""
 
+# 【能力块·只读PM】只在「当前对话者已绑定」时才挂载。未绑定用户看不到这段、也拿不到这些工具。
+# 配套工具：get_my_tasks / get_project_status / get_my_schedule / get_my_alerts（见 agent/tools.py）。
+PM_INSTRUCTIONS = """【你能帮 ta 查什么】ta 已绑定系统账号，你可以调用工具查 ta 的真实项目数据，答复要基于查到的事实、给具体的任务名和数字，不要泛泛而谈：
+- 问「我手上有什么任务 / 有几个逾期 / 最近要交什么」→ get_my_tasks
+- 问「XX 项目到哪了 / 进展如何」→ get_project_status（传项目名，可模糊）
+- 问「我今天/这周有什么安排 / 我的日程」→ get_my_schedule
+- 问「有什么新消息 / 提醒」→ get_my_alerts
+
+用工具的规矩：
+- 需要 ta 的真实数据时才调用；纯闲聊/常识不用调。
+- 工具返回的是事实清单，你按人设用亲切的话重新组织，不要原样复述那一长串。
+- 「本周/今天」这类时间筛选：先拿到清单，再依据日期自己挑，不用反复调用。
+- 查到什么说什么，没有就说没有，绝不编造任务、项目或数字。
+
+【能力边界·只读】你现在只能【看】、不能【改】。如果 ta 想新建/修改/完成任务、加评论等写操作，坦诚说明「这些我暂时只能帮你查看，改动请到系统页面操作」，不要假装已经改好了。"""
+
 
 def _identity_of(run_context) -> Dict[str, Any]:
     """从 run_context 里取出本轮注入的「当前对话者」身份；缺省视作未绑定。"""
@@ -63,7 +85,7 @@ def _build_instructions(run_context) -> list:
     """按当前对话者身份拼装指令：核心恒定 + 能力块动态挂载。
 
     - 未绑定：核心 + 绑定能力块（引导 + 绑定动作）
-    - 已绑定：核心 + 一句「你在跟谁说话」，不含任何绑定相关文字
+    - 已绑定：核心 + 一句「你在跟谁说话」+ 只读 PM 能力块，不含任何绑定相关文字
     """
     ident = _identity_of(run_context)
     blocks = [BASE_INSTRUCTIONS]
@@ -73,14 +95,21 @@ def _build_instructions(run_context) -> list:
             f"【关于当前对话者】ta 是你已经认识的同事「{name}」。请自然地称呼 ta 的名字，"
             f"把 ta 当作老朋友一样交流。"
         )
+        blocks.append(PM_INSTRUCTIONS)
     else:
         blocks.append(BIND_INSTRUCTIONS)
     return blocks
 
 
 def _build_tools(run_context) -> list:
-    """按身份挂载工具：只有未绑定用户才需要 bind_user；已绑定用户连工具 schema 都不注入。"""
-    return [] if _identity_of(run_context).get("bound") else [bind_user]
+    """按身份挂载工具：
+
+    - 未绑定：只有 bind_user（引导绑定），拿不到任何数据工具。
+    - 已绑定：4 个只读 PM 工具；不含 bind_user（已绑用户不需要再绑）。
+    """
+    if _identity_of(run_context).get("bound"):
+        return [get_my_tasks, get_project_status, get_my_schedule, get_my_alerts]
+    return [bind_user]
 
 _agent: Optional[Agent] = None
 
@@ -111,7 +140,9 @@ def get_agent() -> Agent:
             telemetry=False,  # 关闭遥测，避免多余外网调用
             add_datetime_to_context=True,
             timezone_identifier="Asia/Shanghai",
-            debug_mode=True
+            debug_mode=True,
+            learning=True,
+            enable_agentic_memory=True
         )
     return _agent
 
@@ -129,8 +160,10 @@ async def astream_reply(
     :param user_id: 用户 ID（用于跨会话的用户级隔离），可与 session_id 相同
     :param identity: 当前对话者身份（框架无关的通用契约，由调用方解析后传入）。约定字段：
         - bound (bool): 是否已绑定系统账号
+        - id (str): 已绑定时的内部用户 id（只读工具按它查「我的任务/日程/提醒」）
         - display_name (str): 已绑定时的显示名
         - username (str): 已绑定时的登录名
+        - role (str): 已绑定时的角色（admin/user/member），影响项目查询范围
         未绑定时传 {"bound": False} 即可；为 None 时按未知处理。
         本函数把它作为 dependencies 传给 agent，由 _build_instructions / _build_tools
         按身份动态拼装指令与工具（已绑定用户不会看到任何绑定相关内容）。
@@ -177,17 +210,31 @@ if __name__ == "__main__":
             print(f"\033[90m  (len={len(full)}, think泄漏={leaked})\033[0m")
 
     async def _smoke() -> None:
-        # 场景一：未绑定 —— 期望能闲聊，并在合适时机引导绑定
+        # 场景一：未绑定 —— 期望能闲聊，并在合适时机引导绑定；不应挂载/使用任何 PM 只读工具
         await _run(
             "smoke-unbound",
             ["你是谁？", "帮我看看我手上的任务进度", "怎么才能收到任务提醒？"],
             {"bound": False},
         )
-        # 场景二：已绑定 —— 期望称呼名字；再要求绑定时应说“已绑定过”而非追问用户名
+        # 场景二：已绑定 —— 用真实存在、且名下有任务的用户 id（叶飞/Finn），
+        # 期望能调用只读工具查到真实任务/项目/提醒；问写操作时应坦白「只能看不能改」。
         await _run(
             "smoke-bound",
-            ["你好呀", "帮我绑定一下"],
-            {"bound": True, "display_name": "张三", "username": "zhangsan", "role": "member"},
+            [
+                "你好呀",
+                "我手上有什么任务？",
+                "我有几个逾期的？",
+                "「飞叶学校户外雨棚捐赠」这个项目到哪了？",
+                "我有什么新消息吗？",
+                "帮我把第一笔付款标记成已完成",  # 写操作：应坦白只读
+            ],
+            {
+                "bound": True,
+                "id": "user_1775808580706_fcmow",
+                "display_name": "叶飞(Finn)",
+                "username": "yefei",
+                "role": "user",
+            },
         )
 
     asyncio.run(_smoke())
