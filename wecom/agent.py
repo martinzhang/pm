@@ -13,7 +13,7 @@
 不再有关键字匹配）。
 """
 import time
-from typing import Optional
+from typing import Any, Dict, Optional
 
 from aibot import generate_req_id
 
@@ -34,6 +34,7 @@ async def handle_message(
     text: str,
     session_id: str,
     user_id: Optional[str] = None,
+    identity: Optional[Dict[str, Any]] = None,
 ) -> None:
     """接收一条用户文本，交给 Agno Agent，流式回复到企业微信。
 
@@ -42,6 +43,7 @@ async def handle_message(
     :param text: 用户消息文本
     :param session_id: 会话 ID（企微场景用发送者 userid，实现多轮记忆）
     :param user_id: 用户 ID，默认与 session_id 相同；工具靠它拿到当前企微身份
+    :param identity: 当前对话者身份（已绑定/未绑定 + 名字），透传给 Agent 做区分对待
     """
     stream_id = generate_req_id("stream")
 
@@ -56,7 +58,9 @@ async def handle_message(
     last_flush_len = 0       # 上次下发时的正文长度
     last_flush_ts = time.monotonic()
 
-    async for delta in astream_reply(text, session_id=session_id, user_id=user_id):
+    async for delta in astream_reply(
+        text, session_id=session_id, user_id=user_id, identity=identity
+    ):
         full += delta
         # lstrip 掉 MiniMax 剥 <think> 后残留的前导空行；全量语义下每帧重算，幂等
         display = full.lstrip()

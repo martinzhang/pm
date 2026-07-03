@@ -16,6 +16,7 @@ from aibot import WSClient, WSClientOptions
 
 from wecom import notify
 from wecom import agent as wecom_agent
+from repositories import users as users_repo
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 ENV_LOCAL = REPO_ROOT / ".env.local"
@@ -57,6 +58,37 @@ async def _due_check_loop():
         await asyncio.sleep(DUE_CHECK_INTERVAL_SECONDS)
 
 
+def _resolve_identity(wecom_userid):
+    """把企微 userid 解析成给 Agent 的通用身份契约。
+
+    已绑定 -> {"bound": True, "display_name", "username", "role"}
+    未绑定/查库异常 -> {"bound": False}
+    异常时静默降级为未绑定，不阻断聊天。
+    """
+    from models import get_db
+
+    if not wecom_userid or wecom_userid == "anon":
+        return {"bound": False}
+    conn = None
+    try:
+        conn = get_db()
+        user = users_repo.get_by_wecom(conn, wecom_userid)
+    except Exception as e:
+        print(f"身份解析出错: {e}", flush=True)
+        user = None
+    finally:
+        if conn is not None:
+            conn.close()
+    if not user:
+        return {"bound": False}
+    return {
+        "bound": True,
+        "display_name": user.get("display_name") or user.get("username") or "",
+        "username": user.get("username") or "",
+        "role": user.get("role") or "",
+    }
+
+
 @ws_client.on("message.text")
 async def on_text(frame):
     body = frame.get("body", {})
@@ -70,9 +102,15 @@ async def on_text(frame):
     # session_id / user_id 用发送者 userid——既实现每人独立的多轮记忆，
     # 也让 bind_user 工具能从 RunContext.user_id 拿到当前企微身份。
     wecom_userid = body.get("from", {}).get("userid", "") or "anon"
+
+    # 反查身份：这个企微 userid 绑没绑系统账号、绑的是谁。作为通用契约传给 Agent，
+    # 让它区分「已绑定同事(称呼名字)」和「未绑定(引导绑定)」。DB 访问集中在入口层。
+    identity = _resolve_identity(wecom_userid)
+
     await wecom_agent.handle_message(
         ws_client, frame, content,
         session_id=wecom_userid, user_id=wecom_userid,
+        identity=identity,
     )
 
 

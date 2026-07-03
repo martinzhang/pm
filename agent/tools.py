@@ -13,7 +13,7 @@ Agent 工具集 -- 供 Agno Agent 调用的能力(function-calling）
 from agno.run import RunContext
 
 from models import get_db
-from wecom import notify
+from repositories import users as users_repo
 
 
 def bind_user(run_context: RunContext, username: str) -> str:
@@ -37,11 +37,17 @@ def bind_user(run_context: RunContext, username: str) -> str:
 
     conn = get_db()
     try:
-        # notify.bind_wecom_user 内部按 username 查 users 表；查不到返回 False，不会误写。
-        ok = notify.bind_wecom_user(conn, username, wecom_userid)
+        # users_repo.bind_wecom 内部按 username 查 users 表；查不到返回 None，不会误写。
+        # 成功则返回被绑定用户的 dict（含 display_name），供当轮用真名亲切称呼。
+        user = users_repo.bind_wecom(conn, username, wecom_userid)
     finally:
         conn.close()
 
-    if ok:
-        return f"绑定成功：已把你的企业微信账号绑定到用户「{username}」，之后任务到期提醒会发给你。"
+    if user:
+        # 优先用显示名（如「张猛(马丁)」）称呼，比登录名亲切；缺失时回退到登录名
+        name = user.get("display_name") or user.get("username") or username
+        return (
+            f"绑定成功：已把你的企业微信账号绑定到用户「{name}」，之后任务到期提醒会发给你。"
+            f"请在回复里用「{name}」亲切地称呼对方，欢迎 ta 完成绑定。"
+        )
     return f"没找到用户名「{username}」，绑定未执行。请确认用户名和系统里的登录名一致，或换一个再试。"
