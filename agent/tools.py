@@ -127,6 +127,42 @@ def get_my_tasks(run_context: RunContext) -> str:
     return head + "\n" + "\n".join(lines)
 
 
+def get_my_projects(run_context: RunContext) -> str:
+    """查当前同事参与的「活跃项目」清单（ta 负责的 + ta 有任务在其中的；管理员可见全部）。
+
+    当同事问「我有哪些项目 / 我参与了哪些项目 / 我手上的项目都到哪了 / 我负责的项目」
+    这类想一次看到「所有项目」的问题时调用。返回每个项目的完成度与平均进度概况。
+    若同事只关心某一个具体项目的细节（任务清单等），用 get_project_status。
+
+    Returns:
+        项目清单文本，供你按需组织后转达。
+    """
+    ident = _current_user(run_context)
+    uid = ident.get("id")
+    if not uid:
+        return "没拿到你的系统身份（可能还没绑定），暂时查不了你的项目。"
+
+    is_admin = (ident.get("role") == "admin")
+    conn = get_db()
+    try:
+        projs = projects_repo.list_participating_with_progress(conn, uid, is_admin)
+    finally:
+        conn.close()
+
+    if not projs:
+        return "你名下暂时没有参与的活跃项目。"
+    lines = []
+    for p in projs:
+        owner = f"｜负责人{p.get('owner_name')}" if p.get("owner_name") else ""
+        deadline = f"｜截止{p.get('deadline')}" if p.get("deadline") else ""
+        lines.append(
+            f"「{p.get('name','')}」{owner}｜{p['done']}/{p['total']} 任务完成"
+            f"｜平均进度 {p['avg_progress']}%{deadline}"
+        )
+    scope = "系统里共" if is_admin else "你参与"
+    return f"{scope} {len(projs)} 个活跃项目：\n" + "\n".join(lines)
+
+
 def get_project_status(run_context: RunContext, project_name: str) -> str:
     """查某个项目的进度概况（该同事参与的项目；管理员可查全部活跃项目）。
 

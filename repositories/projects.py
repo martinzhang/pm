@@ -52,6 +52,18 @@ def progress_summary(conn, pid):
     }
 
 
+def list_participating_with_progress(conn, user_id, is_admin, limit=20):
+    """列「当前用户参与的」活跃项目，每个附带进度聚合，供「我有哪些项目」用。
+
+    参与口径与 find_participating_by_name 完全一致（owner 或有我负责/协作的任务；
+    admin 放宽到全部活跃项目），故直接复用它（name 传空 = 不加名字过滤），再逐个
+    取 progress_summary。项目数在 PM 系统里就几个到几十个，这点循环无需在意。
+    返回 [dict(...projects 列..., total, done, avg_progress), ...]，按 updated_at 倒序。
+    """
+    projs = find_participating_by_name(conn, user_id, is_admin, name="", limit=limit)
+    return [{**p, **progress_summary(conn, p["id"])} for p in projs]
+
+
 def list_tasks(conn, pid):
     """列一个项目下的全部任务，按截止日期升序（无截止日排最后）。
 
