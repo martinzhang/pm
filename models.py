@@ -231,3 +231,14 @@ def run_migrations():
         c.close()
     except Exception:
         pass
+
+    # Migrate: add wecom_userid column to users (企业微信机器人绑定)
+    try:
+        c = get_db()
+        cols = [r[1] for r in c.execute("PRAGMA table_info(users)").fetchall()]
+        if "wecom_userid" not in cols:
+            c.execute("ALTER TABLE users ADD COLUMN wecom_userid TEXT DEFAULT ''")
+            c.commit()
+        c.close()
+    except Exception:
+        pass

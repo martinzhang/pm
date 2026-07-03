@@ -5,3 +5,6 @@ app:
 
 sync:
 	uv sync
+
+bot:
+	uv run python -m wecom.bot
