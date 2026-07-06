@@ -119,8 +119,8 @@ _ROUTES: dict[str, object] = {
     # 斜线命令（首选 /xxx，中文关键词保留作为别名）
     "/到期":        _cmd_due,
     "/due":         _cmd_due,
-    "到期任务":     _cmd_due,
-    "我的到期":     _cmd_due,
+    "/到期任务":     _cmd_due,
+    "/我的到期":     _cmd_due,
 }
 
 
