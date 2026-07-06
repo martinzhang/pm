@@ -18,6 +18,7 @@ from loguru import logger
 import logconf
 from wecom import notify
 from wecom import agent as wecom_agent
+from wecom import cards
 from repositories import users as users_repo
 
 logconf.setup()
@@ -116,6 +117,91 @@ async def on_text(frame):
         identity.get("bound"),
         identity.get("display_name", ""),
     )
+
+    # ── 卡片效果测试（关键词触发） ──────────────────────────────────
+    if content == "测试文本卡":
+        card = cards.text_notice(
+            title="文本通知卡片",
+            desc="这是副标题说明",
+            source_desc="PM 系统",
+            emphasis=("42", "进行中任务"),
+            horizontal=[
+                cards.kv("负责人", "张三"),
+                cards.kv_link("项目", "NMC 研发", "https://example.com"),
+            ],
+            jumps=[cards.jump("查看详情", "https://example.com/tasks")],
+            action_url="https://example.com/tasks",
+        )
+        await ws_client.reply_template_card(frame, card)
+        return
+    elif content == "测试图文卡":
+        card = cards.news_notice(
+            title="图文展示卡片",
+            desc="这是一段图文卡副标题",
+            source_desc="PM 系统",
+            image_url="https://picsum.photos/seed/pm/800/360",
+            vertical=[
+                {"title": "版本", "desc": "v2.0.0"},
+                {"title": "环境", "desc": "生产"},
+            ],
+            horizontal=[cards.kv("发布人", "张三")],
+            jumps=[cards.jump("查看发布记录", "https://example.com/releases")],
+            action_url="https://example.com/releases",
+        )
+        await ws_client.reply_template_card(frame, card)
+        return
+    elif content == "测试按钮卡":
+        card = cards.button_interaction(
+            title="按钮交互卡片",
+            desc="请选择操作",
+            task_id="btn_test_001",
+            horizontal=[cards.kv("任务", "修复登录 Bug")],
+            buttons=[
+                cards.button("确认完成", key="done", style=cards.BTN_BLUE),
+                cards.button("暂缓处理", key="defer", style=cards.BTN_GRAY),
+                cards.button("拒绝", key="reject", style=cards.BTN_RED),
+            ],
+            action_url="https://example.com/tasks",
+        )
+        await ws_client.reply_template_card(frame, card)
+        return
+    elif content == "测试投票卡":
+        card = cards.vote_interaction(
+            title="投票交互卡片",
+            desc="请投票选择优先级",
+            task_id="vote_test_001",
+            question_key="priority",
+            options=[
+                ("high", "高优先级"),
+                ("mid", "中优先级"),
+                ("low", "低优先级"),
+            ],
+            mode=0,  # 单选
+            card_action=cards.action_jump("https://example.com"),
+        )
+        await ws_client.reply_template_card(frame, card)
+        return
+    elif content == "测试多选卡":
+        card = cards.multiple_interaction(
+            title="多项选择卡片",
+            desc="请选择负责人和截止时间",
+            task_id="multi_test_001",
+            selects=[
+                ("assignee", "负责人", [("u1", "张三"), ("u2", "李四"), ("u3", "王五")]),
+                ("due", "截止时间", [("d1", "本周"), ("d2", "下周"), ("d3", "本月")]),
+            ],
+            card_action=cards.action_jump("https://example.com"),
+        )
+        await ws_client.reply_template_card(frame, card)
+        return
+    elif content == "测试到期卡":
+        user_id = identity.get("id")
+        if not user_id:
+            await ws_client.reply_text(frame, "您尚未绑定账号，无法查询任务。")
+            return
+        await notify.reply_due_card_for_user(ws_client, frame, user_id)
+        return
+    # ────────────────────────────────────────────────────────────────
 
     try:
         await wecom_agent.handle_message(
