@@ -34,6 +34,12 @@ PRIORITIES = [("urgent", "紧急"), ("high", "高"), ("medium", "中"), ("low", 
 PROJECT_STATUS = [("active", "进行中"), ("paused", "暂停"), ("completed", "已完成"), ("archived", "已归档")]
 PROJECT_COLORS = ["#95A3B3", "#C89D9F", "#82B89C", "#A594C4", "#D4A574", "#7CB5B3", "#D4956A", "#8BA3C7"]
 
+# ── Agent DB ──
+AGENT_DB_URL = os.environ.get(
+    "AGENT_DB_URL",
+    "postgresql+asyncpg://postgres:nmCafe1503@192.168.0.239:15432/pm_agent",
+)
+
 # ── AI ──
 MINIMAX_API_KEY = os.environ.get(
     "MINIMAX_API_KEY",

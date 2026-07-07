@@ -13,9 +13,10 @@ dependencies = [
     # AI 大脑（agent/ 包）：Agno 框架 + MiniMax（OpenAILike，用 openai SDK）+ SqliteDb 会话库（sqlalchemy）
     "agno>=2.6",
     "openai>=1.0",
-    "sqlalchemy>=2.0",
+    "sqlalchemy[asyncio]>=2.0",
     "loguru>=0.7.3",
     "opentelemetry-api>=1.43.0",
     "opentelemetry-sdk>=1.43.0",
     "openinference-instrumentation-agno>=0.1.38",
+    "asyncpg>=0.31.0",
 ]

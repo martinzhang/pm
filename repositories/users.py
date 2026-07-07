@@ -37,6 +37,17 @@ def bind_wecom(conn, username, wecom_userid):
     return dict(row)
 
 
+def get_by_username(conn, username):
+    """按 username 查用户，返回 dict(id, username, display_name, role) 或 None。"""
+    if not username:
+        return None
+    row = conn.execute(
+        "SELECT id, username, display_name, role FROM users WHERE username=?",
+        (username,),
+    ).fetchone()
+    return dict(row) if row else None
+
+
 def find_bound(conn, user_ids):
     """给定一批系统用户 id，返回其中「已绑定企微」的用户。
 
