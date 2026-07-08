@@ -29,8 +29,8 @@ def create_app():
         return inject_globals()
 
     # Blueprints
-    from blueprints import projects, tasks, calendar, dashboard, ai, meetings, ical
-    for bp in [projects.bp, tasks.bp, calendar.bp, dashboard.bp, ai.bp, meetings.bp, ical.bp]:
+    from blueprints import projects, tasks, calendar, dashboard, ai, meetings, ical, pm_agent
+    for bp in [projects.bp, tasks.bp, calendar.bp, dashboard.bp, ai.bp, meetings.bp, ical.bp, pm_agent.bp]:
         app.register_blueprint(bp, url_prefix=URL_PREFIX)
 
     return app

@@ -2821,7 +2821,7 @@ function sendChat() {
         return;
     }
 
-    fetch(B + '/api/chat', {
+    fetch(B + '/api/agent/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'same-origin',

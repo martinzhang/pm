@@ -7,14 +7,14 @@ from flask import request, g
 from models import get_db
 from config import GATEWAY_USERS_FILE, GATEWAY_ORG_FILE, URL_PREFIX, PHASES, PHASE_MAP, PHASE_COLORS, PROJECT_COLORS, PRIORITIES, PROJECT_STATUS
 
-_ENV_LOCAL = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env.local")
+_ENV_DEV = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env.dev")
 
 
-def _load_env_local():
-    """Parse .env.local and return dict of key=value pairs."""
+def _load_env_dev():
+    """Parse .env.dev and return dict of key=value pairs."""
     env = {}
     try:
-        with open(_ENV_LOCAL, encoding="utf-8") as f:
+        with open(_ENV_DEV, encoding="utf-8") as f:
             for line in f:
                 line = line.strip()
                 if not line or line.startswith("#") or "=" not in line:
@@ -49,8 +49,8 @@ def load_user():
     role = request.headers.get("X-Auth-Role", "member")
 
     if not uid:
-        # 开发模式：优先读 .env.local 中的 DEV_USER
-        dev_username = _load_env_local().get("DEV_USER", "").strip()
+        # 开发模式：优先读 .env.dev 中的 DEV_USER
+        dev_username = _load_env_dev().get("DEV_USER", "").strip()
         if dev_username:
             found = _dev_user_from_db(dev_username)
             if found:
