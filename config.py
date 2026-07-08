@@ -4,6 +4,27 @@ Projects -- configuration & constants
 import os
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+
+def _load_env_file(path):
+    """极简 .env 加载：KEY=VALUE，忽略注释/空行；已存在的环境变量优先，不覆盖。"""
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                key, _, val = line.partition("=")
+                key, val = key.strip(), val.strip().strip('"').strip("'")
+                if key and key not in os.environ:
+                    os.environ[key] = val
+    except FileNotFoundError:
+        pass
+
+
+# 生产配置（endpoint / key 等）集中在 .env.prod，此处优先加载
+_load_env_file(os.path.join(BASE_DIR, ".env.prod"))
+
 DB_PATH = os.path.join(BASE_DIR, "projects.db")
 UPLOAD_DIR = os.path.join(BASE_DIR, "uploads")
 URL_PREFIX = os.environ.get("URL_PREFIX", "")
@@ -40,13 +61,10 @@ AGENT_DB_URL = os.environ.get(
     "postgresql+asyncpg://postgres:nmCafe1503@192.168.0.239:15432/pm_agent",
 )
 
-# ── AI ──
-MINIMAX_API_KEY = os.environ.get(
-    "MINIMAX_API_KEY",
-    "sk-cp-JY_0qjYL8Y8qebUixGtghTwToFERGsd9o3S8O9CiGBaBqs0UnxV-2HRHkOAvllOJ_b0RORGRdrkGKAu4gY0-f4lL9q6qEkzSdWONwSW90AYzwvlt4exfe8o",
-)
-MINIMAX_BASE = "https://api.minimaxi.com/v1"
-MINIMAX_MODEL = "MiniMax-M2.7-highspeed"
+# ── AI（经 litellm 网关；配置见 .env.prod，由 pm2 env_file 注入）──
+MINIMAX_API_KEY = os.environ.get("LLM_API_KEY") or os.environ.get("MINIMAX_API_KEY", "")
+MINIMAX_BASE = os.environ.get("LLM_BASE_URL", "https://api.minimaxi.com/v1")
+MINIMAX_MODEL = os.environ.get("LLM_MODEL", "MiniMax-M2.7-highspeed")
 PHASE_ORDER = [p[0] for p in PHASES]
 FILE_CONTENT_PER_FILE = 50000
 FILE_CONTENT_TOTAL = 500000

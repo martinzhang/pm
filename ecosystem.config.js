@@ -10,6 +10,7 @@ module.exports = {
       instances: 1,
       autorestart: true,
       watch: false,
+      env_file: '/Users/nmconline/apps/pm/.env.prod',
       env: {
         URL_PREFIX: '/pm',
         OBJC_DISABLE_INITIALIZE_FORK_SAFETY: 'YES',
@@ -25,11 +26,12 @@ module.exports = {
       instances: 1,
       autorestart: true,
       watch: false,
+      env_file: '/Users/nmconline/apps/pm/.env.prod',
       env: {
         OBJC_DISABLE_INITIALIZE_FORK_SAFETY: 'YES',
         TZ: 'Asia/Shanghai',
         WECHAT_BOT_ID: 'aibzQIGj08lrFN-Qp9vUaAAL1OrJU_bTlsI',
-        WECHAT_BOT_SECRET: 'G6T7Q3RFJ4tzEFe2IFBbBr7tIr2amQdi5QqtyGagZPo'
+        WECHAT_BOT_SECRET: 'ikmuNcnYlA7cXe1YRyGVfAPiwCKNrlLk4OnLgw0cTlO'
       },
     },
   ],
