@@ -22,7 +22,9 @@ def _load_env_file(path):
         pass
 
 
-# 生产配置（endpoint / key 等）集中在 .env.prod，此处优先加载
+# 环境配置（endpoint / key 等）：dev 机读 .env.dev，prod 机读 .env.prod。
+# 两者都尝试，_load_env_file 不覆盖已存在变量（pm2 直接注入的优先）。
+_load_env_file(os.path.join(BASE_DIR, ".env.dev"))
 _load_env_file(os.path.join(BASE_DIR, ".env.prod"))
 
 DB_PATH = os.path.join(BASE_DIR, "projects.db")
