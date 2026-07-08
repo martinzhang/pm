@@ -26,6 +26,7 @@ from agent.tools import (
     get_my_tasks,
     get_my_projects,
     get_project_status,
+    get_task_detail,
     get_my_schedule,
     get_my_alerts,
 )
@@ -56,11 +57,12 @@ BIND_INSTRUCTIONS = """【关于当前对话者】ta 还没绑定系统账号。
 - 工具返回什么就如实转达，不要谎称成功；绑定成功时用返回的名字亲切称呼 ta。"""
 
 # 【能力块·只读PM】只在「当前对话者已绑定」时才挂载。未绑定用户看不到这段、也拿不到这些工具。
-# 配套工具：get_my_tasks / get_my_projects / get_project_status / get_my_schedule / get_my_alerts（见 agent/tools.py）。
+# 配套工具：get_my_tasks / get_my_projects / get_project_status / get_task_detail / get_my_schedule / get_my_alerts（见 agent/tools.py）。
 PM_INSTRUCTIONS = """【你能帮 ta 查什么】ta 已绑定系统账号，你可以调用工具查 ta 的真实项目数据，答复要基于查到的事实、给具体的任务名和数字，不要泛泛而谈：
 - 问「我手上有什么任务 / 有几个逾期 / 最近要交什么」→ get_my_tasks
 - 问「我有哪些项目 / 我参与的项目都到哪了」（想看全部项目）→ get_my_projects
 - 问「XX 项目到哪了 / 进展如何」（只关心某一个项目的细节）→ get_project_status（传项目名，可模糊）
+- 问「XX 任务有哪些子任务 / 做到哪步了 / 下面讨论了什么」（想看某个任务内部的细节）→ get_task_detail（传任务名，可模糊）
 - 问「我今天/这周有什么安排 / 我的日程」→ get_my_schedule
 - 问「有什么新消息 / 提醒」→ get_my_alerts
 
@@ -113,7 +115,7 @@ def _build_tools(run_context=None) -> list:
     run_context 默认 None，原因同 _build_instructions：兼容埋点库的无参内省调用。
     """
     if _identity_of(run_context).get("bound"):
-        return [get_my_tasks, get_my_projects, get_project_status, get_my_schedule, get_my_alerts]
+        return [get_my_tasks, get_my_projects, get_project_status, get_task_detail, get_my_schedule, get_my_alerts]
     return [bind_user]
 
 _agent: Optional[Agent] = None

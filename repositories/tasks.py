@@ -43,3 +43,34 @@ def find_open_by_user(conn, user_id):
         (user_id, uid_like),
     ).fetchall()
     return [dict(r) for r in rows]
+
+
+def find_participating_by_name(conn, user_id, is_admin, name, limit=5):
+    """按任务名模糊查「当前用户能看到的」任务（供任务详情下钻用）。
+
+    可见性口径与 projects.find_participating_by_name 完全一致（任务跟随项目可见性）：
+    任务所属项目须是「我参与的活跃项目」——owner_id=我，或项目下有我负责/协作的任务；
+    admin 放宽到全部活跃项目。JOIN projects 取项目名，按 updated_at 倒序。
+    name 为空返回 []（任务详情必须指名道姓，不做无名兜底）。
+    返回 [dict(...task 列..., project_name), ...]。
+    """
+    if not user_id or not name:
+        return []
+    conds = ["p.status='active'", "t.name LIKE ?"]
+    args = [f"%{name}%"]
+    if not is_admin:
+        uid_like = f"%{user_id}%"
+        conds.append(
+            "(p.owner_id=? "
+            "OR t.project_id IN (SELECT DISTINCT project_id FROM tasks "
+            "                    WHERE assignee_id=? OR collaborator_ids LIKE ?))"
+        )
+        args.extend([user_id, user_id, uid_like])
+    q = (
+        "SELECT t.*, p.name as project_name FROM tasks t "
+        "JOIN projects p ON t.project_id=p.id "
+        "WHERE " + " AND ".join(conds) + " ORDER BY t.updated_at DESC LIMIT ?"
+    )
+    args.append(limit)
+    rows = conn.execute(q, args).fetchall()
+    return [dict(r) for r in rows]
