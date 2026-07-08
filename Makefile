@@ -8,7 +8,7 @@ _pull:
 	ssh $(REMOTE_HOST) "bash -l -c 'cd $(REMOTE_DIR) && HTTP_PROXY=http://127.0.0.1:10802 HTTPS_PROXY=http://127.0.0.1:10802 git pull && uv sync'"
 
 app:
-	uv run python app.py
+	uv run uvicorn main:app --host 127.0.0.1 --port $${PORT:-8092} --reload
 
 sync:
 	uv sync

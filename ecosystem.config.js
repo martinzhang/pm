@@ -3,8 +3,8 @@ module.exports = {
   apps: [
     {
       name: 'pm',
-      script: './venv/bin/gunicorn',
-      args: ['-w', '2', '-b', '127.0.0.1:8092', '--timeout', '300', '--error-logfile', './pm.err', '--capture-output', 'app:app'],
+      script: './.venv/bin/gunicorn',
+      args: ['-w', '2', '-k', 'uvicorn.workers.UvicornWorker', '-b', '127.0.0.1:8092', '--timeout', '300', '--error-logfile', './pm.err', '--capture-output', 'main:app'],
       cwd: '/Users/nmconline/apps/pm',
       interpreter: 'none',
       instances: 1,

@@ -29,8 +29,10 @@ def create_app():
         return inject_globals()
 
     # Blueprints
-    from blueprints import projects, tasks, calendar, dashboard, ai, meetings, ical, pm_agent
-    for bp in [projects.bp, tasks.bp, calendar.bp, dashboard.bp, ai.bp, meetings.bp, ical.bp, pm_agent.bp]:
+    # 注：/api/agent/chat 已由 main.py 的 routers/agent_chat.py（原生 FastAPI async）接管，
+    # 不再经过 Flask，故不注册 pm_agent 蓝图（该文件已删除）。
+    from blueprints import projects, tasks, calendar, dashboard, ai, meetings, ical
+    for bp in [projects.bp, tasks.bp, calendar.bp, dashboard.bp, ai.bp, meetings.bp, ical.bp]:
         app.register_blueprint(bp, url_prefix=URL_PREFIX)
 
     return app
