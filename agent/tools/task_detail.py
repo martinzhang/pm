@@ -20,7 +20,7 @@ from agno.run import RunContext
 from agent.tools._shared import _current_user, _fmt_task_line
 
 
-def get_task_detail(run_context: RunContext, task_name: str) -> str:
+def get_task_detail(run_context: RunContext, task_name: str, project_name: str = "") -> str:
     """查某个任务的详情：基本信息 + 子任务清单 + 评论讨论（该同事能看到的任务）。
 
     当同事问「XX 任务有哪些子任务 / XX 任务做到哪一步了 / XX 任务下面讨论了什么 /
@@ -28,8 +28,13 @@ def get_task_detail(run_context: RunContext, task_name: str) -> str:
     按任务名模糊匹配，返回该任务的进度、子任务完成情况、以及评论正文。
     若同事只想看整个项目的任务列表（而非某个任务内部），用 get_project_status。
 
+    不同项目下可能有重名任务。若上一轮返回「匹配到多个任务」并列出了各自所属项目，
+    请把同事指定的项目名一并作为 project_name 再调一次，用它区分出唯一的那个任务。
+
     Args:
         task_name: 任务名（可为部分名字，模糊匹配）。
+        project_name: 可选，任务所属项目名（可为部分名字）。用于区分跨项目的重名任务；
+            不确定时留空即可。
 
     Returns:
         任务详情文本；找不到、无权查看或匹配到多个时如实说明。
@@ -41,19 +46,27 @@ def get_task_detail(run_context: RunContext, task_name: str) -> str:
     name = (task_name or "").strip()
     if not name:
         return "请告诉我要查哪个任务的名字。"
+    proj_name = (project_name or "").strip()
 
     is_admin = (ident.get("role") == "admin")
     conn = get_db()
     try:
-        rows = tasks_repo.find_participating_by_name(conn, uid, is_admin, name, limit=5)
+        rows = tasks_repo.find_participating_by_name(
+            conn, uid, is_admin, name, project_name=proj_name or None, limit=5
+        )
         if not rows:
-            return f"没找到你参与的、名字含「{name}」的任务。换个关键词，或确认下任务名？"
-        # 多个匹配时先列出来让用户挑，不硬猜（与 get_project_status 一致的消歧模式）
+            scope = f"、项目含「{proj_name}」" if proj_name else ""
+            return f"没找到你参与的、名字含「{name}」{scope}的任务。换个关键词，或确认下任务名？"
+        # 多个匹配时先列出来让用户挑，不硬猜（与 get_project_status 一致的消歧模式）。
+        # 带上各自所属项目名，并明确提示可用项目名收敛——重名任务全靠项目名区分。
         if len(rows) > 1:
             names = "、".join(
                 f"「{t.get('name','')}」（{t.get('project_name','')}）" for t in rows
             )
-            return f"匹配到多个任务：{names}。你想看哪一个？（可以说得更具体些）"
+            return (
+                f"匹配到多个任务：{names}。你想看哪个项目下的？"
+                f"（告诉我项目名，我就能定位到具体那一个）"
+            )
         t = rows[0]
         subs = subtasks_repo.list_by_task(conn, t["id"])
         cmts = comments_repo.list_by_task(conn, t["id"])
