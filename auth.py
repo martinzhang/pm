@@ -75,13 +75,21 @@ def load_user():
 
 
 def _static_version():
-    base = os.path.dirname(os.path.abspath(__file__))
-    paths = [
-        os.path.join(base, "static", "css", "app.css"),
-        os.path.join(base, "static", "js", "app.js"),
-    ]
-    ts = max((int(os.path.getmtime(p)) for p in paths if os.path.exists(p)), default=0)
-    return ts
+    """取 static/ 下所有 css/js 的最新 mtime 作为缓存版本号。
+
+    扫描整个目录(而非硬编码文件名)：新增静态模块(如 chat-commands.js)时无需改这里，
+    改动任一 css/js 都会让 ?v= 变化、强制浏览器拉新版本，避免加载到旧缓存。
+    """
+    base = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
+    latest = 0
+    for root, _dirs, files in os.walk(base):
+        for name in files:
+            if name.endswith((".js", ".css")):
+                try:
+                    latest = max(latest, int(os.path.getmtime(os.path.join(root, name))))
+                except OSError:
+                    pass
+    return latest
 
 
 def inject_globals():

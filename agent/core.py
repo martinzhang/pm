@@ -152,8 +152,8 @@ def get_agent() -> Agent:
             add_datetime_to_context=True,
             timezone_identifier="Asia/Shanghai",
             debug_mode=True,
-            learning=True,
-            enable_agentic_memory=True
+            learning=False,
+            enable_agentic_memory=False
         )
     return _agent
 

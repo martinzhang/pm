@@ -1,4 +1,5 @@
 import json
+import re
 
 from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
@@ -18,6 +19,26 @@ def _last_user_message(messages) -> str:
             if text:
                 return text
     return ""
+
+
+# 会话「话题句柄」：前端 /new 时生成，只允许字母数字、长度受限。
+# 前端只持有这个句柄(不含 uid)，session_id 由后端拼成 web-{uid}-{topic}，
+# 故前端无从借它读到别人的会话记忆。
+_TOPIC_RE = re.compile(r"^[A-Za-z0-9]{1,32}$")
+
+
+def _resolve_session_id(topic, user_id) -> str:
+    """由「话题句柄」拼出可信的 session_id。
+
+    契约：session_id = "web-{uid}"（默认会话）或 "web-{uid}-{topic}"（/new 切出的新会话）。
+    - uid 段【永远】用后端认证得到的 user_id，前端不经手，天然无法读到他人记忆。
+    - topic 经白名单校验：合法就隔出一条新会话；空/非法则回落默认会话，
+      与老客户端(不传 topic)天然兼容。
+    """
+    base = f"web-{user_id}"
+    if isinstance(topic, str) and _TOPIC_RE.match(topic):
+        return f"{base}-{topic}"
+    return base
 
 
 @router.post("/api/agent/chat")
@@ -49,7 +70,8 @@ async def api_agent_chat(request: Request):
         "role": user.get("role") or "member",
     }
     # session_id 用 web-{uid}，与企微渠道天然隔离，各存各的多轮记忆。
-    session_id = f"web-{user['id']}"
+    # 前端可带 topic 句柄(/new 生成)切「话题」；uid 段恒由后端拼，前端不经手。
+    session_id = _resolve_session_id(data.get("topic"), user["id"])
 
     async def gen():
         try:

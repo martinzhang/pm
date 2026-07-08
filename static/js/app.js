@@ -2542,6 +2542,18 @@ var chatStreaming = false;
 var chatIntroShown = false;
 var lastAIExecLines = null;
 
+// 斜线命令与「会话话题」由 chat-commands.js 独立模块负责（在 app.js 之前引入）。
+// 这里只做依赖注入：把 app.js 的消息渲染/历史/用户id 能力交给模块，模块回调它们。
+(function initChatCommands() {
+    if (!window.ChatCommands) return;   // 模块缺失时聊天仍可用，只是没有斜线命令
+    window.ChatCommands.init({
+        appendMsg:     function (role, text) { appendChatMsg(role, text); },
+        resetHistory:  function () { chatHistory = []; },
+        clearMessages: function () { document.getElementById('chat-messages').innerHTML = ''; },
+        getUserId:     function () { return ME && ME.id; },
+    });
+})();
+
 function toggleChat() {
     chatOpen = !chatOpen;
     document.getElementById('chat-panel').classList.toggle('open', chatOpen);
@@ -2745,6 +2757,15 @@ function sendChat() {
     var input = document.getElementById('chat-input');
     var msg = input.value.trim();
     if (!msg) return;
+
+    // 斜线命令优先：整条精确匹配的无参命令(/new /help)在此拦下，不入历史、不发后端。
+    // 带参命令(/exec /apply)不在命令表中，继续走下方原有分支。
+    if (window.ChatCommands && window.ChatCommands.dispatch(msg)) {
+        input.value = '';
+        input.style.height = 'auto';
+        return;
+    }
+
     input.value = '';
     input.style.height = 'auto';
 
@@ -2825,7 +2846,11 @@ function sendChat() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'same-origin',
-        body: JSON.stringify({ messages: chatHistory })
+        body: JSON.stringify({
+            messages: chatHistory,
+            // 话题句柄(不含 uid)：后端拼成 web-{uid}-{topic} 切会话。空串=默认会话。
+            topic: window.ChatCommands ? window.ChatCommands.topic() : ''
+        })
     }).then(function(resp) {
         var t = document.getElementById('chat-typing');
         if (t) t.remove();
