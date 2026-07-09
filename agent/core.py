@@ -20,7 +20,7 @@ from agno.models.minimax import MiniMax
 from agno.run.agent import RunEvent
 from agno.tracing import setup_tracing
 
-from config import AGENT_DB_URL, MINIMAX_API_KEY, MINIMAX_BASE, MINIMAX_MODEL
+from config import AGENT_DB_URL, AGENT_DB_URL_SYNC, MINIMAX_API_KEY, MINIMAX_BASE, MINIMAX_MODEL
 from agent.tools import (
     bind_user,
     get_my_tasks,
@@ -148,9 +148,30 @@ def get_agent() -> Agent:
     global _agent
     if _agent is None:
         db = AsyncPostgresDb(db_url=AGENT_DB_URL)
-        # 生产环境才启用 tracing（开发库 schema 可能与 Agno 版本不符，跳过避免报错）
-        if os.environ.get("FLASK_ENV") != "development":
-            setup_tracing(db=db)
+        # tracing：把 agent 运行链路(agent/model/tool 调用)落库到 ai.agno_traces / ai.agno_spans，
+        # 用于事后评估 agent 能力、定位问题。默认开启，可用 AGNO_TRACING=0 临时关。
+        #
+        # 【为什么不能直接 setup_tracing(db=这个 AsyncPostgresDb)】
+        # agno 2.6.21 的 DatabaseSpanExporter 对「异步 db」的导出路径有两个 bug，在本项目
+        # gunicorn(UvicornWorker) 多 worker 下会稳定报错、且 trace 一条都写不进去：
+        #   1) export() 是 OTel 规定的【同步】方法，agno 却在里面 asyncio.create_task 甩出
+        #      asyncpg 写库协程。asyncpg 连接死绑创建它的 event loop，等这个游离 task 执行时
+        #      原 loop 常已切换/关闭 → "Event loop is closed" / "attached to a different loop"。
+        #   2) 多个 task 并发跑 _create_table，在共享的 self.metadata 上重复 define 同名表
+        #      且未加 extend_existing → "Table 'ai.agno_traces' is already defined"。
+        #
+        # 【绕过】exporter 对【同步 db】走的 _export_sync 路径是干净的(串行、无 loop、无 create_task)。
+        # 所以 tracing 单独用一个同步 PostgresDb(psycopg 驱动)，并用 BatchSpanProcessor 把
+        # psycopg 的阻塞写库隔离到后台线程——既避开两个 bug，又不拖慢 agent 的异步响应。
+        # 同步库与异步会话库同一个物理库同一个 ai schema，表结构一致，共存无冲突。
+        if os.environ.get("AGNO_TRACING", "1") != "0":
+            try:
+                from agno.db.postgres import PostgresDb
+                trace_db = PostgresDb(db_url=AGENT_DB_URL_SYNC)
+                setup_tracing(db=trace_db, batch_processing=True)
+            except Exception:  # noqa: BLE001 -- tracing 是旁路，配置失败绝不能拖垮 agent 主流程
+                from loguru import logger
+                logger.exception("tracing 初始化失败，已跳过（不影响 agent 正常回答）")
         _agent = Agent(
             model=MiniMax(
                 id=MINIMAX_MODEL,
