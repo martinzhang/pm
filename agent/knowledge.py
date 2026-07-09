@@ -481,39 +481,63 @@ def sync_project_doc(project_id) -> None:
     threading.Thread(target=_do_sync_project_doc, args=(project_id,), daemon=True).start()
 
 
-def index_entities() -> Dict[str, int]:
+def index_entities(progress_every: int = 20) -> Dict[str, int]:
     """离线全量：为所有任务 / 项目重建档案文档（先删旧、再灌新，幂等可重跑）。
 
     与 index_attachments 正交：那个灌附件正文(source=attachment)，这个灌实体档案
-    (source=task/project)，同一张向量表靠 source 区分。返回 {"tasks": n, "projects": m}。
+    (source=task/project)，同一张向量表靠 source 区分。
+
+    每份档案要过一次远程 embedding（几百份会跑几分钟），所以每 progress_every 份打一条
+    进度日志，让全量过程可观测、不像卡死。单份失败只记日志、不中断整批（一个坏 task 不该
+    拖垮另外几百份）。返回 {"tasks": n, "projects": m, "failed": f}。
     """
+    from loguru import logger
     from models import get_db
 
+    failed = 0
     conn = get_db()
     try:
         tids = [r["id"] for r in conn.execute("SELECT id FROM tasks").fetchall()]
         pids = [r["id"] for r in conn.execute("SELECT id FROM projects").fetchall()]
+        total = len(tids) + len(pids)
+        logger.info("实体档案全量开始：{} 个任务 + {} 个项目 = {} 份档案", len(tids), len(pids), total)
+        done = 0
         for tid in tids:
-            card, project_id = _build_task_card(conn, tid)
-            _sync_entity(
-                _ENTITY_SOURCE_TASK,
-                {"source": _ENTITY_SOURCE_TASK, "task_id": str(tid)},
-                card,
-                _entity_meta(_ENTITY_SOURCE_TASK, project_id, tid),
-                name=f"task-{tid}",
-            )
+            try:
+                card, project_id = _build_task_card(conn, tid)
+                _sync_entity(
+                    _ENTITY_SOURCE_TASK,
+                    {"source": _ENTITY_SOURCE_TASK, "task_id": str(tid)},
+                    card,
+                    _entity_meta(_ENTITY_SOURCE_TASK, project_id, tid),
+                    name=f"task-{tid}",
+                )
+            except Exception:  # noqa: BLE001 -- 单份失败不中断整批
+                failed += 1
+                logger.bind(task_id=tid).exception("任务档案全量失败（跳过该份，继续）")
+            done += 1
+            if done % progress_every == 0:
+                logger.info("实体档案全量进度：{}/{}", done, total)
         for pid in pids:
-            card = _build_project_card(conn, pid)
-            _sync_entity(
-                _ENTITY_SOURCE_PROJECT,
-                {"source": _ENTITY_SOURCE_PROJECT, "project_id": str(pid)},
-                card,
-                _entity_meta(_ENTITY_SOURCE_PROJECT, pid),
-                name=f"project-{pid}",
-            )
+            try:
+                card = _build_project_card(conn, pid)
+                _sync_entity(
+                    _ENTITY_SOURCE_PROJECT,
+                    {"source": _ENTITY_SOURCE_PROJECT, "project_id": str(pid)},
+                    card,
+                    _entity_meta(_ENTITY_SOURCE_PROJECT, pid),
+                    name=f"project-{pid}",
+                )
+            except Exception:  # noqa: BLE001 -- 单份失败不中断整批
+                failed += 1
+                logger.bind(project_id=pid).exception("项目档案全量失败（跳过该份，继续）")
+            done += 1
+            if done % progress_every == 0:
+                logger.info("实体档案全量进度：{}/{}", done, total)
     finally:
         conn.close()
-    return {"tasks": len(tids), "projects": len(pids)}
+    logger.info("实体档案全量完成：任务 {}，项目 {}，失败 {}", len(tids), len(pids), failed)
+    return {"tasks": len(tids), "projects": len(pids), "failed": failed}
 
 
 # ── 检索：可见性写死的自定义 retriever ──
