@@ -186,6 +186,7 @@ def get_agent() -> Agent:
             # 本身就是「按身份」的，无需再包一层工厂。
             knowledge=_build_knowledge,
             knowledge_retriever=visible_retriever,
+            search_knowledge=True,
             add_history_to_context=True,  # 把最近几轮对话带进上下文 -> 多轮记忆
             num_history_runs=5,
             # 不开 add_dependencies_to_context：身份已由 _build_instructions 有目的地呈现，

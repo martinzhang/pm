@@ -73,6 +73,10 @@ AGENT_DB_URL_SYNC = os.environ.get(
 EMBED_HOST = os.environ.get("EMBED_HOST", "http://192.168.0.239:11434")
 EMBED_MODEL = os.environ.get("EMBED_MODEL", "bge-m3")
 EMBED_DIM = int(os.environ.get("EMBED_DIM", "1024"))
+# 检索相似度下限（hybrid_score，0~1）：低于此分的片段不召回，避免噪声进上下文。
+# 实测 bge-m3 中文 hybrid 分整体偏低——强相关约 0.30~0.40、噪声约 0.17~0.23，
+# 0.25 卡在两者之间的 gap。生产可用 EMBED_SCORE_THRESHOLD 覆盖再调。
+EMBED_SCORE_THRESHOLD = float(os.environ.get("EMBED_SCORE_THRESHOLD", "0.25"))
 
 # ── AI（经 litellm 网关；配置见 .env.prod，由 pm2 env_file 注入）──
 MINIMAX_API_KEY = os.environ.get("LLM_API_KEY") or os.environ.get("MINIMAX_API_KEY", "")

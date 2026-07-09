@@ -33,7 +33,7 @@ from agno.vectordb.search import SearchType
 from agno.filters import IN
 
 from config import (
-    AGENT_DB_URL_SYNC, EMBED_HOST, EMBED_MODEL, EMBED_DIM,
+    AGENT_DB_URL_SYNC, EMBED_HOST, EMBED_MODEL, EMBED_DIM, EMBED_SCORE_THRESHOLD,
     UPLOAD_DIR, IMAGE_EXTS,
 )
 
@@ -84,6 +84,11 @@ def build_knowledge() -> Knowledge:
             db_url=AGENT_DB_URL_SYNC,   # 同步 psycopg URL，不是 asyncpg
             embedder=embedder,
             search_type=SearchType.hybrid,  # 向量 + 关键词混合，中文短查询更稳
+            # 相似度下限：编译成 SQL `WHERE hybrid_score >= 阈值`，不达标片段根本不出库，
+            # 从源头挡住低相关噪声进 LLM 上下文。对所有走 kb.search() 的调用统一生效。
+            # 注意：这挡不住空白页零向量行（其分数是 NaN，PG 里 `NaN >= 阈值` 为真）——
+            # 那道防线仍靠 visible_retriever 的空内容过滤 + _clean_meta 清 NaN，两者正交。
+            similarity_threshold=EMBED_SCORE_THRESHOLD,
         )
         _knowledge = Knowledge(vector_db=vector_db, max_results=5)
     return _knowledge
