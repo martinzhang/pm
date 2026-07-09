@@ -234,6 +234,10 @@ def api_delete_project(pid):
     conn.execute("DELETE FROM projects WHERE id=?", (pid,))
     conn.commit()
     conn.close()
+    # 知识库同步删除（即时）：按 project_id 一次清掉本项目名下所有 chunk，
+    # 含其下 task 附件——它们 metadata 也带同一 project_id，天然一并清除
+    from agent.knowledge import remove_project
+    remove_project(pid)
     return jsonify({"success": True})
 
 
@@ -317,6 +321,9 @@ def api_upload_project_file(pid):
     )
     conn.commit()
     conn.close()
+    # 知识库增量索引（后台线程，失败不影响上传）
+    from agent.knowledge import sync_index_file
+    sync_index_file("project", pid, None, safe_name, f.filename)
     return jsonify({"success": True})
 
 
@@ -356,4 +363,7 @@ def api_delete_project_file(fid):
     conn.execute("DELETE FROM project_files WHERE id=?", (fid,))
     conn.commit()
     conn.close()
+    # 知识库同步删除（即时）：project 附件无 task_id，按 project_id+stored_name 精确删
+    from agent.knowledge import remove_file
+    remove_file(row["project_id"], None, row["filename"])
     return jsonify({"success": True})

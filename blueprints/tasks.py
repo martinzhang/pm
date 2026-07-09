@@ -219,6 +219,9 @@ def api_delete_task(tid):
     conn.execute("DELETE FROM tasks WHERE id=?", (tid,))
     conn.commit()
     conn.close()
+    # 知识库同步删除（即时）：一条 metadata SQL 清掉该任务名下所有附件 chunk
+    from agent.knowledge import remove_task
+    remove_task(tid)
     return jsonify({"success": True})
 
 
@@ -287,7 +290,7 @@ def api_upload_file(tid):
     if ext not in ALLOWED_EXT:
         return jsonify({"error": f"不支持的文件类型: {ext}"}), 400
     conn_chk = get_db()
-    _, access = check_task_access(conn_chk, tid, g.user)
+    project_id, access = check_task_access(conn_chk, tid, g.user)
     conn_chk.close()
     if not access:
         return jsonify({"error": "无权访问此任务"}), 403
@@ -305,6 +308,9 @@ def api_upload_file(tid):
     )
     conn.commit()
     conn.close()
+    # 知识库增量索引（后台线程，失败不影响上传）：新附件正文进向量库，agent 才检索得到
+    from agent.knowledge import sync_index_file
+    sync_index_file("task", project_id, tid, safe_name, f.filename)
     return jsonify({"success": True})
 
 
@@ -331,7 +337,7 @@ def api_delete_file(fid):
     conn = get_db()
     row = conn.execute("SELECT * FROM task_files WHERE id=?", (fid,)).fetchone()
     if row:
-        _, access = check_task_access(conn, row["task_id"], g.user)
+        project_id, access = check_task_access(conn, row["task_id"], g.user)
         if not access:
             conn.close()
             return jsonify({"error": "无权访问"}), 403
@@ -343,6 +349,9 @@ def api_delete_file(fid):
                 pass
         conn.execute("DELETE FROM task_files WHERE id=?", (fid,))
         conn.commit()
+        # 知识库同步删除（即时）：stored_name 磁盘唯一，重名不误伤
+        from agent.knowledge import remove_file
+        remove_file(project_id, row["task_id"], row["filename"])
     conn.close()
     return jsonify({"success": True})
 

@@ -99,7 +99,10 @@ def _iter_document_attachments(conn):
       - project 附件：pf JOIN projects，物理路径 uploads/project_{project_id}/{filename}
     图片扩展名跳过（agno reader 不解析图片，VLM 描述本期不做）。
 
-    yield: dict(filepath, scope, project_id, task_id, file_name)
+    yield: dict(filepath, scope, project_id, task_id, file_name, stored_name)
+
+    file_name 是 original_name（展示用，可重名）；stored_name 是磁盘唯一的 safe_name，
+    单文件删除时按它精确定位，避免同任务重名文件被误删（见 sync_index_file / remove_file）。
     """
     # task 附件
     rows = conn.execute(
@@ -116,6 +119,7 @@ def _iter_document_attachments(conn):
             "project_id": r["project_id"],
             "task_id": r["task_id"],
             "file_name": r["original_name"],
+            "stored_name": r["filename"],
         }
     # project 附件
     rows = conn.execute(
@@ -132,15 +136,31 @@ def _iter_document_attachments(conn):
             "project_id": r["project_id"],
             "task_id": None,
             "file_name": r["original_name"],
+            "stored_name": r["filename"],
         }
+
+
+def _build_metadata(scope: str, project_id, task_id, file_name: str, stored_name: str) -> Dict[str, str]:
+    """索引/检索共用的 metadata 口径（单一事实源）。
+
+    project_id 是检索期可见性过滤的命脉；stored_name 是磁盘唯一名，作单文件删除主键。
+    全部转字符串——JSONB filter 与 delete_by_metadata 的 @> 都按字符串精确匹配。
+    """
+    return {
+        "source": "attachment",
+        "scope": scope,
+        "project_id": str(project_id) if project_id is not None else "",
+        "task_id": str(task_id) if task_id is not None else "",
+        "file_name": file_name,
+        "stored_name": stored_name,
+    }
 
 
 def index_attachments() -> Dict[str, int]:
     """离线索引：遍历文档类附件，逐个 add_content(path=...) 灌进向量库。
 
     agno 按扩展名自动选 reader（pdf/docx/xlsx/pptx/md/txt…）+ 分块 + 向量化，我们只负责
-    把物理路径和归属 metadata 交给它。metadata 的 project_id 是检索期可见性过滤的命脉，
-    统一转字符串（JSONB filter 按字符串精确匹配）。
+    把物理路径和归属 metadata 交给它。metadata 口径见 _build_metadata（与增量钩子同源）。
 
     返回 {"indexed": n, "skipped_missing": m}。物理文件缺失的静默跳过（本地快照可能缺文件）。
     """
@@ -155,18 +175,115 @@ def index_attachments() -> Dict[str, int]:
             if not os.path.exists(att["filepath"]):
                 skipped += 1
                 continue
-            metadata = {
-                "source": "attachment",
-                "scope": att["scope"],
-                "project_id": str(att["project_id"]) if att["project_id"] is not None else "",
-                "task_id": str(att["task_id"]) if att["task_id"] is not None else "",
-                "file_name": att["file_name"],
-            }
+            metadata = _build_metadata(
+                att["scope"], att["project_id"], att["task_id"],
+                att["file_name"], att["stored_name"],
+            )
             kb.add_content(path=att["filepath"], metadata=metadata)
             indexed += 1
     finally:
         conn.close()
     return {"indexed": indexed, "skipped_missing": skipped}
+
+
+# ── 增量同步：跟随文件生命周期，让向量库与附件增删保持一致 ──
+#
+# 设计（高内聚）：所有"文件变动 → 向量库同步"的逻辑收在这里，Flask 端点只调一行、
+# 不碰 agno/pgvector。四个钩子都【自带 try/except 兜底】——知识库同步是对 agent 检索的
+# 增强，不是文件增删的核心事务，同步失败绝不能让用户的上传/删除失败（dev 机常连不上
+# 本地 pgvector / 远程 ollama，必须静默降级）。
+#
+# 删除类同步、即时执行：纯 SQL DELETE 很快，且"已删文件仍被检索到"是泄漏，不容窗口。
+# 新增类走后台线程：add_content 要解析 + embedding（秒级），不能阻塞上传 HTTP 响应。
+
+_IMG_EXTS = IMAGE_EXTS
+
+
+def _attachment_path(scope: str, project_id, task_id, stored_name: str) -> str:
+    """按 scope 拼物理路径，与 _iter_document_attachments 的落盘规则严格一致。
+
+    task 附件：uploads/{task_id}/{stored_name}
+    project 附件：uploads/project_{project_id}/{stored_name}
+    """
+    if scope == "task":
+        return os.path.join(UPLOAD_DIR, str(task_id), stored_name)
+    return os.path.join(UPLOAD_DIR, f"project_{project_id}", stored_name)
+
+
+def _do_index_file(scope: str, project_id, task_id, stored_name: str, original_name: str) -> None:
+    """真正把单个文件灌进向量库（在后台线程里跑）。图片跳过、缺文件跳过。"""
+    from loguru import logger
+
+    log = logger.bind(scope=scope, stored=stored_name)
+    try:
+        ext = os.path.splitext(original_name)[1].lower()
+        if ext in _IMG_EXTS:
+            return  # 图片不解析（与全量索引口径一致）
+        path = _attachment_path(scope, project_id, task_id, stored_name)
+        if not os.path.exists(path):
+            log.warning("知识库增量索引：物理文件不存在，跳过 {}", path)
+            return
+        kb = build_knowledge()
+        metadata = _build_metadata(scope, project_id, task_id, original_name, stored_name)
+        kb.add_content(path=path, metadata=metadata, upsert=True)  # upsert 幂等，重灌不重复
+        log.info("知识库增量索引完成：{}", original_name)
+    except Exception:  # noqa: BLE001 -- 增强性质，绝不影响上传主流程
+        log.exception("知识库增量索引失败（已忽略，不影响文件上传）")
+
+
+def sync_index_file(scope: str, project_id, task_id, stored_name: str, original_name: str) -> None:
+    """【新增钩子】文件上传后调用：起后台 daemon 线程异步灌库，立即返回、不阻塞上传响应。
+
+    :param scope: "task" | "project"
+    :param project_id: 归属项目 id（可见性过滤的命脉；task 附件也要传其所属项目）
+    :param task_id: task 附件传 task id，project 附件传 None
+    :param stored_name: 磁盘唯一名（DB 的 filename / safe_name），删除主键
+    :param original_name: 原始文件名（判扩展名 + 展示）
+
+    进程重启可能丢未完成线程，但 upsert 幂等、下次全量重灌能补，对当前体量可接受。
+    """
+    import threading
+
+    threading.Thread(
+        target=_do_index_file,
+        args=(scope, project_id, task_id, stored_name, original_name),
+        daemon=True,
+    ).start()
+
+
+def _delete_by(meta: Dict[str, str]) -> None:
+    """按 metadata 从向量库删 chunk 的共用兜底封装（同步、即时）。"""
+    from loguru import logger
+
+    try:
+        build_knowledge().vector_db.delete_by_metadata(meta)
+        logger.bind(meta=meta).info("知识库删除同步完成")
+    except Exception:  # noqa: BLE001 -- 增强性质，绝不影响删除主流程
+        logger.bind(meta=meta).exception("知识库删除同步失败（已忽略，不影响文件删除）")
+
+
+def remove_file(project_id, task_id, stored_name: str) -> None:
+    """【删单文件钩子】按 stored_name + 归属精确删。
+
+    stored_name 磁盘唯一，即使同任务重名（original_name 相同）也不会误删另一个。
+    带上 project_id/task_id 收窄匹配范围（@> 多键 AND），更稳。
+    """
+    meta = {"stored_name": stored_name}
+    if task_id is not None:
+        meta["task_id"] = str(task_id)
+    if project_id is not None:
+        meta["project_id"] = str(project_id)
+    _delete_by(meta)
+
+
+def remove_task(task_id) -> None:
+    """【级联删任务钩子】一条 SQL 清掉该 task 名下所有 chunk，天然覆盖多文件。"""
+    _delete_by({"task_id": str(task_id)})
+
+
+def remove_project(project_id) -> None:
+    """【级联删项目钩子】清掉该 project 名下所有 chunk（含其下 task 附件——它们 metadata 也带 project_id）。"""
+    _delete_by({"project_id": str(project_id)})
 
 
 # ── 检索：可见性写死的自定义 retriever ──
