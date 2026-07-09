@@ -18,15 +18,15 @@ bot:
 
 ## 仅部署 web 服务 (pm / gunicorn)
 deploy-app: _pull
-	ssh $(REMOTE_HOST) "bash -l -c 'pm2 restart pm'"
+	ssh $(REMOTE_HOST) "bash -l -c 'cd $(REMOTE_DIR) && pm2 start ecosystem.config.js --only pm --update-env'"
 	@echo "deploy-app done."
 
 ## 仅部署 bot 服务 (pm-bot)
 deploy-bot: _pull
-	ssh $(REMOTE_HOST) "bash -l -c 'pm2 restart pm-bot'"
+	ssh $(REMOTE_HOST) "bash -l -c 'cd $(REMOTE_DIR) && pm2 start ecosystem.config.js --only pm-bot --update-env'"
 	@echo "deploy-bot done."
 
 ## 同时部署两者
 deploy: _pull
-	ssh $(REMOTE_HOST) "bash -l -c 'pm2 restart pm pm-bot'"
+	ssh $(REMOTE_HOST) "bash -l -c 'cd $(REMOTE_DIR) && pm2 start ecosystem.config.js --update-env'"
 	@echo "deploy done."
