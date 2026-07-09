@@ -291,6 +291,231 @@ def remove_project(project_id) -> None:
     _delete_by({"project_id": str(project_id)})
 
 
+# ── 实体档案：把结构化实体里「人写的文字」聚合成一份可语义检索的档案文档 ──
+#
+# 为什么要这层：附件正文进了向量库，但「决策 / 讨论 / 描述」这类人写的文字散落在
+# tasks.description、subtasks.content、comments.content 里——结构化只读工具要先知道
+# 任务名再线性翻，语义问题（「D11 老板选了哪个提案」）根本够不到。把一个实体名下所有
+# 人写的文字聚合成一份「档案卡」灌进同一向量库（用 metadata.source 区分），让那一次语义
+# 检索同时覆盖【附件正文 + 实体讨论】。爱写评论的团队信息在评论、不爱写的在描述/子任务，
+# 聚合成卡就一网打尽，解决的是一类问题而非单个字段。
+#
+# 只收【非结构化文本】(名 / 描述 / 子任务 / 评论 / 附件名)，绝不收【结构化标量】(状态 /
+# 进度 / 日期 / 计数)：后者要精确 + 实时，归 6 个 SQL 只读工具，一 embed 就召回不准、还要
+# 随高频变动不断重嵌。档案是「快照叙事」，状态是「实时事实」，两条路正交（边界见 core.py）。
+#
+# 幂等靠【先按 metadata 删旧、再灌新】，不能靠 add_content(upsert=True)：agno 的 upsert 按
+# content_hash 去重，档案内容一变(加一条评论)hash 就变，旧档案不会被覆盖而是越堆越多。所以
+# 每次同步先 delete_by_metadata({source, task_id}) 精确清掉这个实体的旧档案(带 source 收窄，
+# 绝不误删同 task_id 的附件 chunk)，再 add_content 灌新。粒度是「两级实体档案」：一 task 一份、
+# 一 project 一份，各自是天然的叙事边界，不拍平成项目级巨型文档(那样 embedding 被稀释、召回掉)。
+
+_ENTITY_SOURCE_TASK = "task"
+_ENTITY_SOURCE_PROJECT = "project"
+
+
+def _entity_meta(source: str, project_id, task_id=None) -> Dict[str, str]:
+    """实体档案的 metadata 口径（单一事实源）。
+
+    source 区分 task / project 档案；project_id 是 visible_retriever 可见性过滤的命脉；
+    task_id 供「先删旧档案」精确定位。全部转字符串，对齐 JSONB @> 的字符串精确匹配。
+    """
+    return {
+        "source": source,
+        "project_id": str(project_id) if project_id is not None else "",
+        "task_id": str(task_id) if task_id is not None else "",
+    }
+
+
+def _build_task_card(conn, task_id):
+    """把一个任务名下所有【人写的文字】聚合成一份档案卡文本。
+
+    收：任务名 + 描述 + 子任务 content + 评论(谁/哪天/正文) + 附件文件名。
+    不收：状态 / 进度 / 日期 / 计数——那些高频变动且要精确，归 SQL 只读工具。
+    返回 (card_text, project_id)；任务不存在返回 (None, None)。
+    """
+    t = conn.execute(
+        "SELECT id, project_id, name, description FROM tasks WHERE id=?", (task_id,)
+    ).fetchone()
+    if not t:
+        return None, None
+    lines = [f"任务：{t['name']}"]
+    if (t["description"] or "").strip():
+        lines.append(f"描述：{t['description'].strip()}")
+
+    subs = conn.execute(
+        "SELECT content FROM subtasks WHERE task_id=? ORDER BY id", (task_id,)
+    ).fetchall()
+    sub_lines = [f"- {s['content'].strip()}" for s in subs if (s["content"] or "").strip()]
+    if sub_lines:
+        lines.append("子任务：")
+        lines.extend(sub_lines)
+
+    cmts = conn.execute(
+        "SELECT user_name, content, created_at FROM comments WHERE task_id=? ORDER BY created_at",
+        (task_id,),
+    ).fetchall()
+    cmt_lines = []
+    for c in cmts:
+        if not (c["content"] or "").strip():
+            continue
+        who = c["user_name"] or "某同事"
+        when = (c["created_at"] or "")[:10]
+        when_str = f"（{when}）" if when else ""
+        cmt_lines.append(f"- {who}{when_str}：{c['content'].strip()}")
+    if cmt_lines:
+        lines.append("评论：")
+        lines.extend(cmt_lines)
+
+    files = conn.execute(
+        "SELECT original_name FROM task_files WHERE task_id=? ORDER BY created_at", (task_id,)
+    ).fetchall()
+    fnames = [f["original_name"] for f in files if (f["original_name"] or "").strip()]
+    if fnames:
+        lines.append("附件：" + "、".join(fnames))
+
+    return "\n".join(lines), t["project_id"]
+
+
+def _build_project_card(conn, project_id):
+    """把一个项目的【人写的文字】聚合成档案卡：项目名 + 描述 + 项目附件名。
+
+    接住「XX 项目当初为什么做」这类藏在项目描述里的语义问题。任务级的讨论各自成
+    task 档案，不在这里重复（避免项目卡膨胀 + 稀释召回）。返回 card_text；项目不存在返回 None。
+    """
+    p = conn.execute(
+        "SELECT id, name, description FROM projects WHERE id=?", (project_id,)
+    ).fetchone()
+    if not p:
+        return None
+    lines = [f"项目：{p['name']}"]
+    if (p["description"] or "").strip():
+        lines.append(f"描述：{p['description'].strip()}")
+    files = conn.execute(
+        "SELECT original_name FROM project_files WHERE project_id=? ORDER BY created_at", (project_id,)
+    ).fetchall()
+    fnames = [f["original_name"] for f in files if (f["original_name"] or "").strip()]
+    if fnames:
+        lines.append("附件：" + "、".join(fnames))
+    return "\n".join(lines)
+
+
+def _sync_entity(source: str, key_meta: Dict[str, str], card, full_meta: Dict[str, str], name: str) -> None:
+    """实体档案同步的共用内核（先按 metadata 删旧、再灌新），同步执行。
+
+    key_meta：精确定位这个实体旧档案的最小键（带 source，绝不误删附件 chunk）。
+    card 为 None（实体已删）时只删不灌。调用方负责起线程 + 兜底 try/except。
+    """
+    kb = build_knowledge()
+    kb.vector_db.delete_by_metadata(key_meta)   # 先清旧档案（含上一版的多个 chunk）
+    if card and card.strip():
+        kb.add_content(text_content=card, name=name, metadata=full_meta)
+
+
+def _do_sync_task_doc(task_id) -> None:
+    """重建单个任务档案（后台线程里跑）。任务已删则只清旧档案。"""
+    from loguru import logger
+    from models import get_db
+
+    log = logger.bind(entity="task", id=task_id)
+    try:
+        conn = get_db()
+        try:
+            card, project_id = _build_task_card(conn, task_id)
+        finally:
+            conn.close()
+        _sync_entity(
+            _ENTITY_SOURCE_TASK,
+            {"source": _ENTITY_SOURCE_TASK, "task_id": str(task_id)},
+            card,
+            _entity_meta(_ENTITY_SOURCE_TASK, project_id, task_id),
+            name=f"task-{task_id}",
+        )
+        log.info("任务档案同步完成")
+    except Exception:  # noqa: BLE001 -- 增强性质，绝不影响主流程
+        log.exception("任务档案同步失败（已忽略，不影响主流程）")
+
+
+def _do_sync_project_doc(project_id) -> None:
+    """重建单个项目档案（后台线程里跑）。项目已删则只清旧档案。"""
+    from loguru import logger
+    from models import get_db
+
+    log = logger.bind(entity="project", id=project_id)
+    try:
+        conn = get_db()
+        try:
+            card = _build_project_card(conn, project_id)
+        finally:
+            conn.close()
+        _sync_entity(
+            _ENTITY_SOURCE_PROJECT,
+            {"source": _ENTITY_SOURCE_PROJECT, "project_id": str(project_id)},
+            card,
+            _entity_meta(_ENTITY_SOURCE_PROJECT, project_id),
+            name=f"project-{project_id}",
+        )
+        log.info("项目档案同步完成")
+    except Exception:  # noqa: BLE001 -- 增强性质，绝不影响主流程
+        log.exception("项目档案同步失败（已忽略，不影响主流程）")
+
+
+def sync_task_doc(task_id) -> None:
+    """【任务档案钩子】任务 / 子任务 / 评论 增删改后调用：起后台线程重建该任务档案。
+
+    立即返回、不阻塞请求。task 被整体删除时用现有 remove_task 即可（按 task_id 连档案带附件
+    一起清），无需再调本钩子。进程重启可能丢未完成线程，但下次全量 index_entities 能补齐。
+    """
+    import threading
+
+    threading.Thread(target=_do_sync_task_doc, args=(task_id,), daemon=True).start()
+
+
+def sync_project_doc(project_id) -> None:
+    """【项目档案钩子】项目名 / 描述 / 项目附件变动后调用：起后台线程重建该项目档案。
+
+    项目被整体删除时用现有 remove_project 即可（按 project_id 连档案带其下所有 chunk 一起清）。
+    """
+    import threading
+
+    threading.Thread(target=_do_sync_project_doc, args=(project_id,), daemon=True).start()
+
+
+def index_entities() -> Dict[str, int]:
+    """离线全量：为所有任务 / 项目重建档案文档（先删旧、再灌新，幂等可重跑）。
+
+    与 index_attachments 正交：那个灌附件正文(source=attachment)，这个灌实体档案
+    (source=task/project)，同一张向量表靠 source 区分。返回 {"tasks": n, "projects": m}。
+    """
+    from models import get_db
+
+    conn = get_db()
+    try:
+        tids = [r["id"] for r in conn.execute("SELECT id FROM tasks").fetchall()]
+        pids = [r["id"] for r in conn.execute("SELECT id FROM projects").fetchall()]
+        for tid in tids:
+            card, project_id = _build_task_card(conn, tid)
+            _sync_entity(
+                _ENTITY_SOURCE_TASK,
+                {"source": _ENTITY_SOURCE_TASK, "task_id": str(tid)},
+                card,
+                _entity_meta(_ENTITY_SOURCE_TASK, project_id, tid),
+                name=f"task-{tid}",
+            )
+        for pid in pids:
+            card = _build_project_card(conn, pid)
+            _sync_entity(
+                _ENTITY_SOURCE_PROJECT,
+                {"source": _ENTITY_SOURCE_PROJECT, "project_id": str(pid)},
+                card,
+                _entity_meta(_ENTITY_SOURCE_PROJECT, pid),
+                name=f"project-{pid}",
+            )
+    finally:
+        conn.close()
+    return {"tasks": len(tids), "projects": len(pids)}
+
+
 # ── 检索：可见性写死的自定义 retriever ──
 
 def _visible_project_ids(uid: str, is_admin: bool) -> List[str]:
@@ -381,6 +606,10 @@ if __name__ == "__main__":
     print("\n[2] 索引附件 ...")
     stat = index_attachments()
     print("    ", stat)
+
+    print("\n[2b] 索引实体档案（任务/项目：描述+子任务+评论+附件名）...")
+    stat_e = index_entities()
+    print("    ", stat_e)
 
     print("\n[3] 裸检索（无可见性，直接问向量库）...")
     q = "咖啡车 包装 提案"

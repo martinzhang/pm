@@ -98,6 +98,9 @@ def api_create_task(pid):
         )
     conn.commit()
     conn.close()
+    # 知识库：重建该任务档案（新任务的名/描述进档案，供语义检索）
+    from agent.knowledge import sync_task_doc
+    sync_task_doc(tid)
     return jsonify({"success": True, "id": tid})
 
 
@@ -192,6 +195,9 @@ def api_update_task(tid):
         )
     conn.commit()
     conn.close()
+    # 知识库：任务名/描述可能已改，重建该任务档案
+    from agent.knowledge import sync_task_doc
+    sync_task_doc(tid)
     return jsonify({"success": True})
 
 
@@ -241,6 +247,9 @@ def api_create_subtask(tid):
                  (tid, content, datetime.now(timezone.utc).isoformat()))
     conn.commit()
     conn.close()
+    # 知识库：子任务清单变了，重建该任务档案
+    from agent.knowledge import sync_task_doc
+    sync_task_doc(tid)
     return jsonify({"success": True})
 
 
@@ -260,6 +269,10 @@ def api_update_subtask(sid):
         conn.execute("UPDATE subtasks SET content=? WHERE id=?", (data["content"], sid))
     conn.commit()
     conn.close()
+    # 知识库：子任务内容可能已改，重建所属任务档案
+    if sub:
+        from agent.knowledge import sync_task_doc
+        sync_task_doc(sub["task_id"])
     return jsonify({"success": True})
 
 
@@ -275,6 +288,10 @@ def api_delete_subtask(sid):
     conn.execute("DELETE FROM subtasks WHERE id=?", (sid,))
     conn.commit()
     conn.close()
+    # 知识库：子任务被删，重建所属任务档案
+    if sub:
+        from agent.knowledge import sync_task_doc
+        sync_task_doc(sub["task_id"])
     return jsonify({"success": True})
 
 
@@ -311,6 +328,9 @@ def api_upload_file(tid):
     # 知识库增量索引（后台线程，失败不影响上传）：新附件正文进向量库，agent 才检索得到
     from agent.knowledge import sync_index_file
     sync_index_file("task", project_id, tid, safe_name, f.filename)
+    # 知识库：附件名进档案卡的「附件」行，重建该任务档案
+    from agent.knowledge import sync_task_doc
+    sync_task_doc(tid)
     return jsonify({"success": True})
 
 
@@ -352,6 +372,9 @@ def api_delete_file(fid):
         # 知识库同步删除（即时）：stored_name 磁盘唯一，重名不误伤
         from agent.knowledge import remove_file
         remove_file(project_id, row["task_id"], row["filename"])
+        # 知识库：附件已删，重建该任务档案（去掉档案卡里那条附件名）
+        from agent.knowledge import sync_task_doc
+        sync_task_doc(row["task_id"])
     conn.close()
     return jsonify({"success": True})
 
@@ -401,6 +424,9 @@ def api_create_comment(tid):
                 notified.add(cid)
     conn.commit()
     conn.close()
+    # 知识库：新评论进档案（决策/讨论的主要载体），重建该任务档案供语义检索
+    from agent.knowledge import sync_task_doc
+    sync_task_doc(tid)
     return jsonify({"success": True})
 
 
@@ -417,4 +443,7 @@ def api_delete_comment(cid):
     conn.execute("DELETE FROM comments WHERE id=?", (cid,))
     conn.commit()
     conn.close()
+    # 知识库：评论被删，重建所属任务档案
+    from agent.knowledge import sync_task_doc
+    sync_task_doc(row["task_id"])
     return jsonify({"success": True})

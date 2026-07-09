@@ -133,6 +133,9 @@ def api_create_project():
     conn.commit()
     pid = cur.lastrowid
     conn.close()
+    # 知识库：新项目的名/描述进档案，供语义检索
+    from agent.knowledge import sync_project_doc
+    sync_project_doc(pid)
     return jsonify({"success": True, "id": pid})
 
 
@@ -205,6 +208,9 @@ def api_update_project(pid):
     conn.execute(f"UPDATE projects SET {','.join(fields)} WHERE id=?", vals)
     conn.commit()
     conn.close()
+    # 知识库：项目名/描述可能已改，重建该项目档案
+    from agent.knowledge import sync_project_doc
+    sync_project_doc(pid)
     return jsonify({"success": True})
 
 
@@ -324,6 +330,9 @@ def api_upload_project_file(pid):
     # 知识库增量索引（后台线程，失败不影响上传）
     from agent.knowledge import sync_index_file
     sync_index_file("project", pid, None, safe_name, f.filename)
+    # 知识库：附件名进项目档案卡，重建该项目档案
+    from agent.knowledge import sync_project_doc
+    sync_project_doc(pid)
     return jsonify({"success": True})
 
 
@@ -366,4 +375,7 @@ def api_delete_project_file(fid):
     # 知识库同步删除（即时）：project 附件无 task_id，按 project_id+stored_name 精确删
     from agent.knowledge import remove_file
     remove_file(row["project_id"], None, row["filename"])
+    # 知识库：附件已删，重建该项目档案（去掉档案卡里那条附件名）
+    from agent.knowledge import sync_project_doc
+    sync_project_doc(row["project_id"])
     return jsonify({"success": True})
