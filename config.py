@@ -62,6 +62,17 @@ AGENT_DB_URL = os.environ.get(
     "AGENT_DB_URL",
     "postgresql+asyncpg://postgres:nmCafe1503@192.168.0.239:15432/pm_agent",
 )
+# PgVector（agno 向量库）用同步 SQLAlchemy 引擎，驱动必须是 psycopg，不能用 asyncpg。
+# 默认从 AGENT_DB_URL 派生（只换驱动），保证与会话库同库；也可用 AGENT_DB_URL_SYNC 单独覆盖。
+AGENT_DB_URL_SYNC = os.environ.get(
+    "AGENT_DB_URL_SYNC",
+    AGENT_DB_URL.replace("+asyncpg", "+psycopg"),
+)
+
+# ── Embedding（ollama / bge-m3，向量维度 1024）──
+EMBED_HOST = os.environ.get("EMBED_HOST", "http://192.168.0.239:11434")
+EMBED_MODEL = os.environ.get("EMBED_MODEL", "bge-m3")
+EMBED_DIM = int(os.environ.get("EMBED_DIM", "1024"))
 
 # ── AI（经 litellm 网关；配置见 .env.prod，由 pm2 env_file 注入）──
 MINIMAX_API_KEY = os.environ.get("LLM_API_KEY") or os.environ.get("MINIMAX_API_KEY", "")
